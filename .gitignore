@@ -1,0 +1,10 @@
+
+
+*.bam
+*.bai
+
+*.fasta
+*.fai
+
+*.vcf
+*.vcf.idx
