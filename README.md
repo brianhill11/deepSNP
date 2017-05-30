@@ -26,6 +26,14 @@ Using WGS
 /u/scratch2/n/ngcrawfo/ERROR_CORRECTION/wgs_simulation/wgsim/wgsim -r 0.03 -R 0.005 -e 0.02 -1 100 -2 100 -A 0 -N 8000000 /u/home/s/serghei/project/Homo_sapiens/Ensembl/GRCh37/Sequence/Chromosomes/17.fa WGS_chr17_1.fastq WGS_chr17_2.fastq >log
 ```
 
+The output of this command (written to _log_ file) has this format:
+- Col1: chromosome
+- Col2: position
+- Col3: original base
+- Col4: new base (IUPAC codes indicate heterozygous)
+- Col5: which genomic copy/haplotype
+
+
 Reads are simulated here
 /u/home/s/serghei/scratch/WGS_deepSNP
 
