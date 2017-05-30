@@ -23,7 +23,7 @@ N=(30 * 83M)/ 200==8M reads to be simulated using this command
 
 Using WGS
 ```
-/u/home/n/ngcrawfo/scratch/ERROR_CORRECTION/wgs_simulation/wgsim/wgsim -r 0.03 -R 0.005 -e 0.02 -1 100 -2 100 -A 0 -N 8000000 /u/home/s/serghei/project/Homo_sapiens/Ensembl/GRCh37/Sequence/Chromosomes/17.fa WGS_chr17_1.fastq WGS_chr17_2.fastq >log
+/u/scratch2/n/ngcrawfo/ERROR_CORRECTION/wgs_simulation/wgsim/wgsim -r 0.03 -R 0.005 -e 0.02 -1 100 -2 100 -A 0 -N 8000000 /u/home/s/serghei/project/Homo_sapiens/Ensembl/GRCh37/Sequence/Chromosomes/17.fa WGS_chr17_1.fastq WGS_chr17_2.fastq >log
 ```
 
 Reads are simulated here
