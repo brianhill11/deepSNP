@@ -66,6 +66,19 @@ def vert_stack_matrices(top_matrix, bottom_matrix):
         return new_mat
 
 
+def concat_feature_matrices(feat_mat1, feat_mat2):
+    """
+    Join 2 feature matrices together column-wise
+    
+    :param feat_mat1: (WINDOW_SIZE x F1) matrix
+    :param feat_mat2: (WINDOW_SIZE x F2) matrix
+    :return: (WINDOW_SIZE x F1+F2) matrix
+    """
+    #print "mat1 shape:", feat_mat1.shape
+    #print "mat2 shape:", feat_mat2.shape
+    return np.concatenate((feat_mat1, feat_mat2), axis=1)
+
+
 def create_feat_mat_read(read, window_start, window_end):
     """
     
@@ -82,10 +95,7 @@ def create_feat_mat_read(read, window_start, window_end):
     print_snp_mask_feature_matrix(snp_mask_feat_mat)
     #
     bp_feat_mat = base_pair_feature_matrix(read, window_start)
-    return bp_feat_mat
-
-
-
+    return concat_feature_matrices(bp_feat_mat, snp_mask_feat_mat)
 
 
 def create_feature_matrix(snp_window_pileups):
@@ -224,6 +234,7 @@ def print_base_pair_feature_matrix(base_pair_feat_matrix):
 
 def snp_mask_feature_matrix(read, window_start):
     """
+    Creates vector of zeros, except 1 at SNP position
     
     :param read: pysam read
     :param window_start: starting position of feature window
@@ -237,7 +248,7 @@ def snp_mask_feature_matrix(read, window_start):
     if snp_pos_in_read >= 0:
         snp_pos_in_matrix = (read.reference_start + snp_pos_in_read) - window_start
         snp_mask_matrix[snp_pos_in_matrix] = 1
-    return snp_mask_matrix
+    return snp_mask_matrix[..., np.newaxis]
 
 
 def print_snp_mask_feature_matrix(snp_mask_feat_matrix):
@@ -310,36 +321,17 @@ def decode_cigar(read, position):
             return op
 
 
-# source: http://biorxiv.org/content/biorxiv/suppl/2016/12/21/092890.DC3/092890-1.pdf
-#def is_candidate(counts, allele):
-#    allele_count = counts[allele]
-#    total_count = sum(counts.values())
-#    return not is_reference_base(allele) and \
-#        allele_count >= MIN_COUNT and \
-#        allele_count / total_count >= MIN_FRACTION
-
-def get_candidate_snps(vcf_file):
-    candidate_snps_by_chrom = {}
-
-    # open VCF file
-    vcf = pysam.VariantFile(vcf_file, 'r')
-    # fetch all variants
-    vcf_iter = vcf.fetch()
-    for record in vcf_iter:
-        chrom = record.chrom
-        # if we haven't seen this chromosome yet, add to the list
-        if chrom not in candidate_snps_by_chrom:
-            # initialize to empty dictionary
-            candidate_snps_by_chrom[chrom] = []
-        # otherwise, we're inserting into existing dict
-        else:
-            # create list of mappings from SNP position to alleles (both ref & alternate)
-            candidate_snps_by_chrom[chrom].append({record.pos : record.alleles})
-    return candidate_snps_by_chrom
-
-
-# source: http://biorxiv.org/content/biorxiv/suppl/2016/12/21/092890.DC3/092890-1.pdf
 def is_usable_read(read):
+    """
+    Checks read for several features to determine whether or not 
+    read is suitable for inclusion 
+
+    source: http://biorxiv.org/content/biorxiv/suppl/2016/12/21/092890.DC3/092890-1.pdf
+    slightly modified from version found in link above
+
+    :param read: pysam read
+    :return: true if read passes all quality tests, else false
+    """
     return (len(read.get_tag("MD")) < 6 and
             not (read.is_duplicate or read.is_qcfail or
                  read.is_secondary or read.is_supplementary) and
@@ -347,50 +339,108 @@ def is_usable_read(read):
             read.mapping_quality >= 10)
 
 
+def get_candidate_snps(vcf_file):
+    """
+    Create {(chromosome, position): (alleles)} mapping
+    of SNPS from VCF file
+    
+    :param vcf_file: path to VCF file
+    :return: {(chromosome, position): (alleles)} SNP mapping
+    """
+    candidate_snps = {}
+
+    # open VCF file
+    vcf = pysam.VariantFile(vcf_file, 'r')
+    # fetch all variants
+    vcf_iter = vcf.fetch()
+    for record in vcf_iter:
+        # tuple (chromosome, position) is primary key
+        location = (record.chrom, record.pos)
+        # if we haven't seen this location yet, add to the dict
+        if location not in candidate_snps:
+            # add allele tuple
+            candidate_snps[location] = record.alleles
+        # otherwise, we're overwriting existing SNP
+        else:
+            print "Found duplicate SNP at ", location, " and we're overwriting..."
+            # create list of mappings from SNP position to alleles (both ref & alternate)
+            candidate_snps[location] = record.alleles
+    return candidate_snps
+
+
+def get_real_snps(truth_file):
+    """
+    Reads in ground truth output (from wgsim) into dict mapping 
+    chromosome to list of {pos -> alleles} maps.
+    
+    Ground truth file should have format like:
+    Col1: chromosome
+    Col2: position
+    Col3: original base
+    Col4: new base (IUPAC codes indicate heterozygous)
+    Col5: which genomic copy/haplotype
+    
+    :param truth_file: output file from wgsim
+    :return: {chrom1 -> [{pos -> allele}], ...}
+    """
+    real_snps = {}
+
+    # open ground truth file
+    with open(truth_file, 'r') as truth_f:
+        for line in truth_f:
+            snp = line.split('\t')
+            chrom = snp[0]
+            position = snp[1]
+            location = (chrom, position)
+            ref_allele = snp[2]
+            alt_allele = snp[3]
+            alleles = (ref_allele, alt_allele)
+            # if we haven't seen this location yet, add to list
+            if location not in real_snps:
+                # initialize to empty list
+                real_snps[location] = alleles
+            # otherwise, we're overwriting existing SNP
+            else:
+                print "Found duplicate SNP at ", location, " and we're overwriting..."
+                real_snps[location] = alleles
+        return real_snps
+
+
 def main():
     in_bam = sys.argv[1]
     in_vcf = sys.argv[2]
     in_ref = sys.argv[3]
+    in_truth = sys.argv[4]
     bam_f = pysam.AlignmentFile(in_bam, "rb")
     ref_f = pysam.Fastafile(in_ref)
 
-    # get "chr" -> [{pos : alleles}}] mapping
+    #real_snps = get_real_snps(in_truth)
+    #print real_snps
+
+    # get {(chr, pos): (ref, alt)} mapping
     candidate_snps = get_candidate_snps(in_vcf)
-    for chromosome, snp_list in candidate_snps.items():
-        for snp in snp_list:
+    for location, alleles in candidate_snps.items():
+        # location is (chromosome, position) tuple
+        chromosome = location[0]
+        pos = location[1]
+        # our feature window is centered on SNP position
+        window_start = pos - (WINDOW_SIZE / 2)
+        window_end = window_start + WINDOW_SIZE
 
-            for pos, alleles in snp.items():
-                #print chromosome, pos, " -> ", alleles
-                window_start = pos - (WINDOW_SIZE / 2)
-                window_end = window_start + WINDOW_SIZE
-
-                #print "win start:", window_start, " win end: ", window_end
-                overlapping_snp_pos = get_snps_in_window(snp_list, window_start, window_end)
-                #snp_pileup_cols = bam_f.pileup(chromosome, window_start, window_end, fastafile=ref_f)
-                window_reads = bam_f.fetch(chromosome, window_start, window_end)
-                ref_bases = ref_f.fetch(chromosome, window_start, window_end)
-                print ref_bases.upper()
-                for read in window_reads:
-                    if is_usable_read(read):
-                        feature_matrix = create_feat_mat_read(read, window_start, window_end)
-                        #feature_matrix = create_feature_matrix(snp_pileup_cols)
-                        #print "feature matrix dims:", feature_matrix.shape
-                        #print feature_matrix
+        #print "win start:", window_start, " win end: ", window_end
+        #overlapping_snp_pos = get_snps_in_window(snp_list, window_start, window_end)
+        #snp_pileup_cols = bam_f.pileup(chromosome, window_start, window_end, fastafile=ref_f)
+        window_reads = bam_f.fetch(chromosome, window_start, window_end)
+        ref_bases = ref_f.fetch(chromosome, window_start, window_end)
+        print ref_bases.upper()
+        for read in window_reads:
+            if is_usable_read(read):
+                read_feature_matrix = create_feat_mat_read(read, window_start, window_end)
+                #feature_matrix = create_feature_matrix(snp_pileup_cols)
+                print "feature matrix dims:", read_feature_matrix.shape
+                print read_feature_matrix
 
                 exit(0)
-    test_snp_positions = [("chr1", 10240), ("chr1", 16459)]
-
-    # TODO: scan to get list of potential SNPs
-
-    # for each SNP, get pileup cols in window
-    # and create feature matrix
-    for chrom, snp_pos in test_snp_positions:
-        window_start = snp_pos - (window_size / 2)
-        window_end = window_start + window_size
-        snp_pileup_cols = bam_f.pileup(chrom, window_start, window_end)
-        feature_matrix = create_feature_matrix(snp_pileup_cols)
-        print "feature matrix dims:", feature_matrix.shape
-        print feature_matrix
 
 
 if __name__ == "__main__":
