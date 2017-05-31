@@ -63,12 +63,12 @@ def vert_stack_matrices(top_matrix, bottom_matrix):
     # if we already have a 3D top matrix, turn bottom into 3D and merge
     if top_matrix.ndim == 3:
         new_mat = np.vstack([top_matrix, bottom_matrix[np.newaxis, ...]])
-        print "new matrix shape:", new_mat.shape
+        #print "new matrix shape:", new_mat.shape
         return new_mat
     # otherwise this is the initial stacking of 2 2D matrices
     else:
         new_mat = np.vstack([top_matrix[np.newaxis, ...], bottom_matrix[np.newaxis, ...]])
-        print "new matrix shape:", new_mat.shape
+        #print "new matrix shape:", new_mat.shape
         return new_mat
 
 
@@ -80,8 +80,8 @@ def concat_feature_matrices(feat_mat1, feat_mat2):
     :param feat_mat2: (WINDOW_SIZE x F2) matrix
     :return: (WINDOW_SIZE x F1+F2) matrix
     """
-    print "mat1 shape:", feat_mat1.shape
-    print "mat2 shape:", feat_mat2.shape
+    #print "mat1 shape:", feat_mat1.shape
+    #print "mat2 shape:", feat_mat2.shape
     return np.concatenate((feat_mat1, feat_mat2), axis=1)
 
 
@@ -259,12 +259,10 @@ def snp_mask_feature_matrix(read, window_start):
     snp_mask_matrix = np.zeros(WINDOW_SIZE)
     # if we have a snp, mark 1 at SNP location in read
     if snp_pos_in_read >= 0:
-        print "read.ref_start:", read.reference_start
-        print "snpPosInRead:", snp_pos_in_read
-        print "window Start:", window_start
         snp_pos_in_matrix = (read.reference_start + snp_pos_in_read) - window_start
+        #print "snp_pos_in_matrix:", snp_pos_in_matrix
         # don't mark SNP if it occurs outside of our window
-        if snp_pos_in_matrix <= WINDOW_SIZE:
+        if snp_pos_in_matrix <= WINDOW_SIZE and snp_pos_in_matrix >= 0:
             snp_mask_matrix[snp_pos_in_matrix] = 1
     return snp_mask_matrix[..., np.newaxis]
 
@@ -379,7 +377,7 @@ def get_candidate_snps(vcf_file):
             candidate_snps[location] = record.alleles
         # otherwise, we're overwriting existing SNP
         else:
-            print "Found duplicate SNP at ", location, " and we're overwriting..."
+            print "Found duplicate SNP at", location, " and we're overwriting..."
             # create list of mappings from SNP position to alleles (both ref & alternate)
             candidate_snps[location] = record.alleles
     return candidate_snps
@@ -418,7 +416,7 @@ def get_real_snps(truth_file):
                 real_snps[location] = alleles
             # otherwise, we're overwriting existing SNP
             else:
-                print "Found duplicate SNP at ", location, " and we're overwriting..."
+                print "Found duplicate SNP at", location, " and we're overwriting..."
                 real_snps[location] = alleles
         return real_snps
 
@@ -462,11 +460,11 @@ def main():
     real_snps = {}
     real_snps_pickle = os.path.splitext(in_truth)[0] + ".pickle"
     if os.path.isfile(real_snps_pickle):
-        print "Loading ", real_snps_pickle
+        print "Loading", real_snps_pickle
         real_snps = pickle.load(open(real_snps_pickle, "rb"))
     else:
         real_snps = get_real_snps(in_truth)
-        print "Creating ", real_snps_pickle, " file"
+        print "Creating", real_snps_pickle, " file"
         pickle.dump(real_snps, open(real_snps_pickle, "wb"))
     #print real_snps
 
@@ -474,11 +472,11 @@ def main():
     candidate_snps_pickle = os.path.splitext(in_vcf)[0] + ".pickle"
     # get {(chr, pos): (ref, alt)} mapping
     if os.path.isfile(candidate_snps_pickle):
-        print "Loading ", candidate_snps_pickle
+        print "Loading", candidate_snps_pickle
         candidate_snps = pickle.load(open(candidate_snps_pickle, "rb"))
     else:
         candidate_snps = get_candidate_snps(in_vcf)
-        print "Creating ", candidate_snps_pickle, " file"
+        print "Creating", candidate_snps_pickle, " file"
         pickle.dump(candidate_snps, open(candidate_snps_pickle, "wb"))
 
     num_snps = 0
@@ -497,7 +495,6 @@ def main():
         snp_feat_matrix = np.empty([WINDOW_SIZE, 1])
         first_read = True
         print "location:", location
-        print "win start:", window_start, " win end: ", window_end
         #overlapping_snp_pos = get_snps_in_window(snp_list, window_start, window_end)
         #snp_pileup_cols = bam_f.pileup(chromosome, window_start, window_end, fastafile=ref_f)
         window_reads = bam_f.fetch(chromosome, window_start, window_end)
@@ -526,10 +523,10 @@ def main():
                 labels.append(0)
 
 
-        print ""
-        print snp_feat_matrix
+        #print ""
+        #print snp_feat_matrix
         print "feature matrix dims:", snp_feat_matrix.shape
-        if num_snps == 5:
+        if num_snps == 25:
             print "Num feature matrices: ", len(feature_matrices)
             print "Num labels: ", len(labels)
             labels = np.array(labels)
