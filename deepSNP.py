@@ -14,6 +14,7 @@ from caffe2.proto import caffe2_pb2
 #######################################
 # GLOBALS
 #######################################
+DEBUG = 0
 MIN_COUNT = 1
 MIN_FRACTION = 1. / 20
 WINDOW_SIZE = 80
@@ -98,7 +99,8 @@ def create_feat_mat_read(read, window_start, window_end):
     """
 
     snp_mask_feat_mat = snp_mask_feature_matrix(read, window_start)
-    print_snp_mask_feature_matrix(snp_mask_feat_mat)
+    if DEBUG:
+        print_snp_mask_feature_matrix(snp_mask_feat_mat)
     #
     bp_feat_mat = base_pair_feature_matrix(read, window_start)
     return concat_feature_matrices(bp_feat_mat, snp_mask_feat_mat)
@@ -220,7 +222,8 @@ def base_pair_feature_matrix(read, window_start):
                       ((num_pad_left, num_pad_right), (0, 0)),
                       'constant', constant_values=(0,))
     #print "BP feat matrix shape: ", base_pair_feat_matrix.shape
-    print_base_pair_feature_matrix(base_pair_feat_matrix)
+    if DEBUG:
+        print_base_pair_feature_matrix(base_pair_feat_matrix)
     return base_pair_feat_matrix
 
 
@@ -262,7 +265,7 @@ def snp_mask_feature_matrix(read, window_start):
         snp_pos_in_matrix = (read.reference_start + snp_pos_in_read) - window_start
         #print "snp_pos_in_matrix:", snp_pos_in_matrix
         # don't mark SNP if it occurs outside of our window
-        if snp_pos_in_matrix <= WINDOW_SIZE and snp_pos_in_matrix >= 0:
+        if snp_pos_in_matrix < WINDOW_SIZE and snp_pos_in_matrix >= 0:
             snp_mask_matrix[snp_pos_in_matrix] = 1
     return snp_mask_matrix[..., np.newaxis]
 
@@ -483,7 +486,8 @@ def main():
     feature_matrices = []
     labels = []
     for location, alleles in candidate_snps.items():
-
+        if num_snps % 100000 == 0:
+            print "Num SNPs processed:", num_snps
         # location is (chromosome, position) tuple
         chromosome = location[0]
         pos = location[1]
@@ -494,12 +498,14 @@ def main():
 
         snp_feat_matrix = np.empty([WINDOW_SIZE, 1])
         first_read = True
-        print "location:", location
+        if DEBUG:
+            print "location:", location
         #overlapping_snp_pos = get_snps_in_window(snp_list, window_start, window_end)
         #snp_pileup_cols = bam_f.pileup(chromosome, window_start, window_end, fastafile=ref_f)
         window_reads = bam_f.fetch(chromosome, window_start, window_end)
         ref_bases = ref_f.fetch(chromosome, window_start, window_end)
-        print ref_bases.upper()
+        if DEBUG:
+            print ref_bases.upper()
         num_reads = 0
         for read in window_reads:
 
@@ -513,7 +519,7 @@ def main():
                 # else, stack read's feature matrix with prev reads
                 else:
                     snp_feat_matrix = vert_stack_matrices(snp_feat_matrix, read_feature_matrix)
-        print "Num reads processed:", num_reads
+        #print "Num reads processed:", num_reads
         if num_reads > 0:
             num_snps += 1
             feature_matrices.append(snp_feat_matrix)
@@ -525,13 +531,14 @@ def main():
 
         #print ""
         #print snp_feat_matrix
-        print "feature matrix dims:", snp_feat_matrix.shape
-        if num_snps == 25:
-            print "Num feature matrices: ", len(feature_matrices)
-            print "Num labels: ", len(labels)
-            labels = np.array(labels)
-            write_caffe2_db("minidb", "train.minidb", feature_matrices, labels)
-            exit(0)
+        #print "feature matrix dims:", snp_feat_matrix.shape
+        #if num_snps == 25:
+    print "Num feature matrices: ", len(feature_matrices)
+    print "Num labels: ", len(labels)
+    labels = np.array(labels)
+    write_caffe2_db("minidb", "train.minidb", feature_matrices, labels)
+    print "Sum labels:", np.sum(labels)
+    exit(0)
 
 
 if __name__ == "__main__":
