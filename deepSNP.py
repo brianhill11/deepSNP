@@ -4,6 +4,12 @@ import pysam
 import numpy as np
 import sys
 from sklearn.feature_extraction import DictVectorizer
+import cPickle as pickle
+import os
+
+sys.path.append("/usr/local")
+from caffe2.python import core, utils, workspace
+from caffe2.proto import caffe2_pb2
 
 #######################################
 # GLOBALS
@@ -74,8 +80,8 @@ def concat_feature_matrices(feat_mat1, feat_mat2):
     :param feat_mat2: (WINDOW_SIZE x F2) matrix
     :return: (WINDOW_SIZE x F1+F2) matrix
     """
-    #print "mat1 shape:", feat_mat1.shape
-    #print "mat2 shape:", feat_mat2.shape
+    print "mat1 shape:", feat_mat1.shape
+    print "mat2 shape:", feat_mat2.shape
     return np.concatenate((feat_mat1, feat_mat2), axis=1)
 
 
@@ -83,12 +89,12 @@ def create_feat_mat_read(read, window_start, window_end):
     """
     
     each feature-creating function we call shall return a
-    # (WINDOW_SIZE x F) matrix, where F is the num of features
+    (WINDOW_SIZE x F) matrix, where F is the num of features
     
-    :param read: 
-    :param window_start: 
-    :param window_end: 
-    :return: 
+    :param read: pysam read
+    :param window_start: starting position of feature window
+    :param window_end: ending position of feature window
+    :return: (WINDOW_SIZE x F) matrix
     """
 
     snp_mask_feat_mat = snp_mask_feature_matrix(read, window_start)
@@ -195,12 +201,19 @@ def base_pair_feature_matrix(read, window_start):
     :return: (WINDOW_SIZE x 4) matrix
     """
     window_end = window_start + WINDOW_SIZE
-    # create the (READ_LENGTH x 4) matrix encoding base pairs
-    one_hot_base_mat = vectorize_base_seq(read.query_sequence)
-    #print "1-hot shape:", one_hot_base_mat.shape
     # calculate dimensions to left and right of read for padding zeros
     num_pad_left = np.maximum(0, read.reference_start - window_start)
     num_pad_right = np.maximum(0, window_end - read.reference_end)
+    # check if we have only part of the read in the window
+    normalized_offset = window_start - read.reference_start
+    seq_start = np.maximum(normalized_offset, 0)
+    seq_end = np.minimum(normalized_offset + WINDOW_SIZE, read.reference_length)
+    #print "[", seq_start, seq_end, "]"
+    base_pair_seq = read.query_sequence[seq_start:seq_end]
+    # create the (READ_LENGTH x 4) matrix encoding base pairs
+    one_hot_base_mat = vectorize_base_seq(base_pair_seq)
+    #print "1-hot shape:", one_hot_base_mat.shape
+
     # we are padding 1st dimension on left and right with zeros.
     # (0, 0) says don't pad on 2nd dimension before or after
     base_pair_feat_matrix = np.lib.pad(one_hot_base_mat,
@@ -246,8 +259,13 @@ def snp_mask_feature_matrix(read, window_start):
     snp_mask_matrix = np.zeros(WINDOW_SIZE)
     # if we have a snp, mark 1 at SNP location in read
     if snp_pos_in_read >= 0:
+        print "read.ref_start:", read.reference_start
+        print "snpPosInRead:", snp_pos_in_read
+        print "window Start:", window_start
         snp_pos_in_matrix = (read.reference_start + snp_pos_in_read) - window_start
-        snp_mask_matrix[snp_pos_in_matrix] = 1
+        # don't mark SNP if it occurs outside of our window
+        if snp_pos_in_matrix <= WINDOW_SIZE:
+            snp_mask_matrix[snp_pos_in_matrix] = 1
     return snp_mask_matrix[..., np.newaxis]
 
 
@@ -335,8 +353,7 @@ def is_usable_read(read):
     return (len(read.get_tag("MD")) < 6 and
             not (read.is_duplicate or read.is_qcfail or
                  read.is_secondary or read.is_supplementary) and
-            (not read.is_paired or read.is_properly_placed) and
-            read.mapping_quality >= 10)
+            read.is_paired and read.mapping_quality >= 10)
 
 
 def get_candidate_snps(vcf_file):
@@ -406,6 +423,34 @@ def get_real_snps(truth_file):
         return real_snps
 
 
+def write_caffe2_db(db_type, db_name, features, labels):
+    """
+    
+    
+    Based on tutorial from https://github.com/caffe2/caffe2/blob/master/caffe2/python/tutorials/create_your_own_dataset.ipynb
+    
+    
+    :param db_type: 
+    :param db_name: 
+    :param features: 
+    :param labels: 
+    :return: 
+    """
+    db = core.C.create_db(db_type, db_name, core.C.Mode.write)
+    transaction = db.new_transaction()
+    # iterate through feature matrix
+    for i in range(0, len(features)):
+        feature_and_label = caffe2_pb2.TensorProtos()
+        feature_and_label.protos.extend([
+            utils.NumpyArrayToCaffe2Tensor(features[i]),
+            utils.NumpyArrayToCaffe2Tensor(labels[i])
+        ])
+        transaction.put('train_%03d'.format(i), feature_and_label.SerializeToString())
+    # close transaction and DB
+    del transaction
+    del db
+
+
 def main():
     in_bam = sys.argv[1]
     in_vcf = sys.argv[2]
@@ -414,12 +459,33 @@ def main():
     bam_f = pysam.AlignmentFile(in_bam, "rb")
     ref_f = pysam.Fastafile(in_ref)
 
-    #real_snps = get_real_snps(in_truth)
+    real_snps = {}
+    real_snps_pickle = os.path.splitext(in_truth)[0] + ".pickle"
+    if os.path.isfile(real_snps_pickle):
+        print "Loading ", real_snps_pickle
+        real_snps = pickle.load(open(real_snps_pickle, "rb"))
+    else:
+        real_snps = get_real_snps(in_truth)
+        print "Creating ", real_snps_pickle, " file"
+        pickle.dump(real_snps, open(real_snps_pickle, "wb"))
     #print real_snps
 
+    candidate_snps = {}
+    candidate_snps_pickle = os.path.splitext(in_vcf)[0] + ".pickle"
     # get {(chr, pos): (ref, alt)} mapping
-    candidate_snps = get_candidate_snps(in_vcf)
+    if os.path.isfile(candidate_snps_pickle):
+        print "Loading ", candidate_snps_pickle
+        candidate_snps = pickle.load(open(candidate_snps_pickle, "rb"))
+    else:
+        candidate_snps = get_candidate_snps(in_vcf)
+        print "Creating ", candidate_snps_pickle, " file"
+        pickle.dump(candidate_snps, open(candidate_snps_pickle, "wb"))
+
+    num_snps = 0
+    feature_matrices = []
+    labels = []
     for location, alleles in candidate_snps.items():
+
         # location is (chromosome, position) tuple
         chromosome = location[0]
         pos = location[1]
@@ -427,20 +493,48 @@ def main():
         window_start = pos - (WINDOW_SIZE / 2)
         window_end = window_start + WINDOW_SIZE
 
-        #print "win start:", window_start, " win end: ", window_end
+
+        snp_feat_matrix = np.empty([WINDOW_SIZE, 1])
+        first_read = True
+        print "location:", location
+        print "win start:", window_start, " win end: ", window_end
         #overlapping_snp_pos = get_snps_in_window(snp_list, window_start, window_end)
         #snp_pileup_cols = bam_f.pileup(chromosome, window_start, window_end, fastafile=ref_f)
         window_reads = bam_f.fetch(chromosome, window_start, window_end)
         ref_bases = ref_f.fetch(chromosome, window_start, window_end)
         print ref_bases.upper()
+        num_reads = 0
         for read in window_reads:
-            if is_usable_read(read):
-                read_feature_matrix = create_feat_mat_read(read, window_start, window_end)
-                #feature_matrix = create_feature_matrix(snp_pileup_cols)
-                print "feature matrix dims:", read_feature_matrix.shape
-                print read_feature_matrix
 
-                exit(0)
+            if is_usable_read(read):
+                num_reads += 1
+                read_feature_matrix = create_feat_mat_read(read, window_start, window_end)
+                # if this is our first read, overwrite snp_feat_matrix
+                if first_read:
+                    snp_feat_matrix = read_feature_matrix
+                    first_read = False
+                # else, stack read's feature matrix with prev reads
+                else:
+                    snp_feat_matrix = vert_stack_matrices(snp_feat_matrix, read_feature_matrix)
+        print "Num reads processed:", num_reads
+        if num_reads > 0:
+            num_snps += 1
+            feature_matrices.append(snp_feat_matrix)
+            if location in real_snps:
+                labels.append(1)
+            else:
+                labels.append(0)
+
+
+        print ""
+        print snp_feat_matrix
+        print "feature matrix dims:", snp_feat_matrix.shape
+        if num_snps == 5:
+            print "Num feature matrices: ", len(feature_matrices)
+            print "Num labels: ", len(labels)
+            labels = np.array(labels)
+            write_caffe2_db("minidb", "train.minidb", feature_matrices, labels)
+            exit(0)
 
 
 if __name__ == "__main__":
