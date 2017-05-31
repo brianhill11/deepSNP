@@ -309,6 +309,10 @@ def get_snp_pos_in_read(read):
             # NOTE: len(md_flag) < 6 prevents things like 11A2T1T19 from getting through
             if len(md_flag) < 6:
                 if len(md_flag.split(b)) == 2:
+                    # TODO: handle deletions?
+                    # check for deletion character 
+                    if len(md_flag.split("^")) == 2:
+                        return -1
                     # if read is reversed, need to flip
                     if read.is_reverse:
                         return int(md_flag.split(b)[1])
