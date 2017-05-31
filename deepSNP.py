@@ -492,9 +492,9 @@ def main():
         chromosome = location[0]
         pos = location[1]
         # our feature window is centered on SNP position
-        window_start = pos - (WINDOW_SIZE / 2)
+        # max() makes sure we don't have negative index near start of contig
+        window_start = max(pos - (WINDOW_SIZE / 2), 0)
         window_end = window_start + WINDOW_SIZE
-
 
         snp_feat_matrix = np.empty([WINDOW_SIZE, 1])
         first_read = True
