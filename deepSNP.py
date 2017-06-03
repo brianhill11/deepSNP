@@ -23,14 +23,15 @@ from base_pos_feature import *
 #######################################
 # GLOBALS
 #######################################
-DEBUG = 1
-MIN_COUNT = 1
-MIN_FRACTION = 1. / 20
+DEBUG = 0
+# feature matrix dimensions
 WINDOW_SIZE = 80
 NUM_ROWS = 30
-NUM_FEATURES = 4
-feature_pos = {'qual': 0, 'mqual': 1, 'pos': 2, 'read_num': 3}
-
+# number of training examples
+NUM_TRAINING_EXAMPLES = 1000000
+NUM_TRAINING_EX_PER_CLASS = NUM_TRAINING_EXAMPLES / 2
+# number of testing examples
+NUM_TESTING_EXAMPLES = 100000
 
 def create_feat_mat_read(read, window_start, window_end):
     """
@@ -199,11 +200,17 @@ def main():
         pickle.dump(candidate_snps, open(candidate_snps_pickle, "wb"))
 
     num_snps = 0
+    num_positive_train_ex = 0
+    num_negative_train_ex = 0
+    total_num_reads = 0
     feature_matrices = []
     labels = []
     for location, alleles in candidate_snps.items():
         if num_snps % 100000 == 0:
             print "Num SNPs processed:", num_snps
+        if num_snps > NUM_TRAINING_EXAMPLES:
+            print "Reached max number of training examples"
+            break
         # location is (chromosome, position) tuple
         chromosome = location[0]
         pos = location[1]
@@ -219,14 +226,13 @@ def main():
         #overlapping_snp_pos = get_snps_in_window(snp_list, window_start, window_end)
         #snp_pileup_cols = bam_f.pileup(chromosome, window_start, window_end, fastafile=ref_f)
         window_reads = bam_f.fetch(chromosome, window_start, window_end)
-        ref_bases = ref_f.fetch(chromosome, window_start, window_end)
         if DEBUG:
+            ref_bases = ref_f.fetch(chromosome, window_start, window_end)
             print ref_bases.upper()
         num_reads = 0
         for read in window_reads:
-
-            if read.has_tag("MD") and is_usable_read(read):
-                num_reads += 1
+            # check to make sure read is useful and we haven't hit max num reads
+            if read.has_tag("MD") and is_usable_read(read) and num_reads < NUM_ROWS:
                 read_feature_matrix = create_feat_mat_read(read, window_start, window_end)
                 # if this is our first read, overwrite snp_feat_matrix
                 if first_read:
@@ -235,14 +241,42 @@ def main():
                 # else, stack read's feature matrix with prev reads
                 else:
                     snp_feat_matrix = vert_stack_matrices(snp_feat_matrix, read_feature_matrix)
+                num_reads += 1
         #print "Num reads processed:", num_reads
         if num_reads > 0:
-            num_snps += 1
-            feature_matrices.append(snp_feat_matrix)
+            # calculate number of empty rows we need to add to matrix
+            num_empty_rows = NUM_ROWS - num_reads
+
+            if num_empty_rows > 0:
+                # if we only have one read, snp_feat_matrix is still 2D matrix
+                # TODO: should we just throw out SNPs with only 1 read covering?
+                if snp_feat_matrix.ndim != 3:
+                    snp_feat_matrix = snp_feat_matrix[np.newaxis, ...]
+                # empty_rows matrix should have dims: (#emptyrows x WINDOW_SIZE x #features)
+                empty_rows = np.zeros((num_empty_rows, WINDOW_SIZE, snp_feat_matrix.shape[2]))
+                
+                snp_feat_matrix = np.vstack([snp_feat_matrix, empty_rows])
+
+            assert(snp_feat_matrix.shape[0] == NUM_ROWS)
+            assert(snp_feat_matrix.shape[1] == WINDOW_SIZE)
+
+            # case: True SNP
             if location in real_snps:
-                labels.append(1)
+                # make sure our class distributions are even
+                if num_positive_train_ex < NUM_TRAINING_EX_PER_CLASS:
+                    feature_matrices.append(snp_feat_matrix)
+                    labels.append(1)
+                    num_positive_train_ex += 1
+                    num_snps += 1
+                    total_num_reads += num_reads
+            # case: False SNP
             else:
-                labels.append(0)
+                if num_negative_train_ex < NUM_TRAINING_EX_PER_CLASS:
+                    feature_matrices.append(snp_feat_matrix)
+                    labels.append(0)
+                    num_negative_train_ex += 1
+                    num_snps += 1
+                    total_num_reads += num_reads
 
 
         #print ""
@@ -253,7 +287,8 @@ def main():
     print "Num labels: ", len(labels)
     labels = np.array(labels)
     write_caffe2_db("minidb", "train.minidb", feature_matrices, labels)
-    print "Sum labels:", np.sum(labels)
+    print "Sum of labels:", np.sum(labels)
+    print "Avg #reads per SNP:", total_num_reads / len(feature_matrices)
     exit(0)
 
 
