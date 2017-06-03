@@ -83,8 +83,13 @@ def concat_feature_matrices(feat_mat1, feat_mat2):
     """
     #print "mat1 shape:", feat_mat1.shape
     #print "mat2 shape:", feat_mat2.shape
-    return np.concatenate((feat_mat1, feat_mat2), axis=1)
-
+    try:
+        return np.concatenate((feat_mat1, feat_mat2), axis=1)
+    except ValueError as e:
+        print e
+        print "matrix1 shape:", feat_mat1.shape
+        print "matrix2 shape:", feat_mat2.shape
+        exit(-100)
 
 def create_feat_mat_read(read, window_start, window_end):
     """
@@ -205,11 +210,14 @@ def base_pair_feature_matrix(read, window_start):
     window_end = window_start + WINDOW_SIZE
     # calculate dimensions to left and right of read for padding zeros
     num_pad_left = np.maximum(0, read.reference_start - window_start)
-    num_pad_right = np.maximum(0, window_end - read.reference_end)
+    # NOTE: pysam reference_length = reference_end - reference_start
+    # but this does not necessarily mean the query sequence is that length
+    ref_end = read.reference_start + len(read.query_sequence)
+    num_pad_right = np.maximum(0, window_end - ref_end)
     # check if we have only part of the read in the window
     normalized_offset = window_start - read.reference_start
     seq_start = np.maximum(normalized_offset, 0)
-    seq_end = np.minimum(normalized_offset + WINDOW_SIZE, read.reference_length)
+    seq_end = np.minimum(normalized_offset + WINDOW_SIZE, len(read.query_sequence))
     #print "[", seq_start, seq_end, "]"
     base_pair_seq = read.query_sequence[seq_start:seq_end]
     # create the (READ_LENGTH x 4) matrix encoding base pairs
@@ -221,6 +229,21 @@ def base_pair_feature_matrix(read, window_start):
     base_pair_feat_matrix = np.lib.pad(one_hot_base_mat,
                       ((num_pad_left, num_pad_right), (0, 0)),
                       'constant', constant_values=(0,))
+    if base_pair_feat_matrix.shape[0] != WINDOW_SIZE:
+        print "ERROR: base pair feat matrix not size of window"
+        print "len(bps)", len(base_pair_seq)
+        print "window start:", window_start
+        print "window end:", window_end
+        print "read start:", read.reference_start
+        print "read end:", read.reference_end
+        print "read len:", read.reference_length
+        print "len(qs):", len(read.query_sequence)
+        print "shape:", base_pair_feat_matrix.shape
+        print "num_pad_left:", num_pad_left
+        print "num_pad_right:", num_pad_right
+        print "seq_start:", seq_start
+        print "seq_end:", seq_end
+        exit(-101)
     #print "BP feat matrix shape: ", base_pair_feat_matrix.shape
     if DEBUG:
         print_base_pair_feature_matrix(base_pair_feat_matrix)
@@ -513,7 +536,7 @@ def main():
         num_reads = 0
         for read in window_reads:
 
-            if is_usable_read(read):
+            if read.has_tag("MD") and is_usable_read(read):
                 num_reads += 1
                 read_feature_matrix = create_feat_mat_read(read, window_start, window_end)
                 # if this is our first read, overwrite snp_feat_matrix
