@@ -35,9 +35,7 @@ def base_pair_feature_matrix(read, window_start):
     :return: (WINDOW_SIZE x 4) matrix
     """
     # check if we have only part of the read in the window
-    normalized_offset = window_start - read.reference_start
-    seq_start = np.maximum(normalized_offset, 0)
-    seq_end = np.minimum(normalized_offset + deepSNP.WINDOW_SIZE, len(read.query_sequence))
+    seq_start, seq_end = utils.seq_start_end(read, window_start)
 
     base_pair_seq = read.query_sequence[seq_start:seq_end]
     # create the (READ_LENGTH x 4) matrix encoding base pairs

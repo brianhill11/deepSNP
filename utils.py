@@ -89,6 +89,21 @@ def get_padding(read, window_start):
     return num_pad_left, num_pad_right
 
 
+def seq_start_end(read, window_start):
+    """
+    Calculates starting & ending position of read that overlaps
+    with feature window
+
+    :param read: pysam read
+    :param window_start: starting position of feature window
+    :return: (seq_start, seq_end) tuple
+    """
+    normalized_offset = window_start - read.reference_start
+    read_len = len(read.query_sequence)
+    seq_start = np.maximum(normalized_offset, 0)
+    seq_end = np.minimum(normalized_offset + deepSNP.WINDOW_SIZE, read_len)
+    return seq_start, seq_end
+
 def get_snps_in_window(snps, window_start, window_end):
     """
     Check to see which SNPs overlap with window

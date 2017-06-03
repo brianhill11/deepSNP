@@ -15,10 +15,7 @@ def map_qual_feature_matrix(read, window_start):
     :return: (WINDOW_SIZE x 1) matrix containing MQAL at read positions
     """
     # check if we have only part of the read in the window
-    normalized_offset = window_start - read.reference_start
-    read_len = len(read.query_sequence)
-    seq_start = np.maximum(normalized_offset, 0)
-    seq_end = np.minimum(normalized_offset + deepSNP.WINDOW_SIZE, read_len)
+    seq_start, seq_end = utils.seq_start_end(read, window_start)
 
     # print "offset:", normalized_offset
     # print "start: ", seq_start, " end: ", seq_end
