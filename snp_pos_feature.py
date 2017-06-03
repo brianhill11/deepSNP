@@ -16,7 +16,7 @@ def snp_pos_feature_matrix(read, window_start):
     # if SNP exists in read, get position
     snp_pos_in_read = get_snp_pos_in_read(read)
     # create zero vector
-    snp_mask_matrix = np.zeros(deepSNP.WINDOW_SIZE)
+    snp_mask_matrix = np.zeros((deepSNP.WINDOW_SIZE, 1))
     # if we have a snp, mark 1 at SNP location in read
     if snp_pos_in_read >= 0:
         snp_pos_in_matrix = (read.reference_start + snp_pos_in_read) - window_start
@@ -24,7 +24,7 @@ def snp_pos_feature_matrix(read, window_start):
         # don't mark SNP if it occurs outside of our window
         if snp_pos_in_matrix < deepSNP.WINDOW_SIZE and snp_pos_in_matrix >= 0:
             snp_mask_matrix[snp_pos_in_matrix] = 1
-    return snp_mask_matrix[..., np.newaxis]
+    return snp_mask_matrix
 
 
 def print_snp_pos_feature_matrix(snp_mask_feat_matrix):

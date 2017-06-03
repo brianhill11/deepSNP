@@ -104,6 +104,28 @@ def seq_start_end(read, window_start):
     seq_end = np.minimum(normalized_offset + deepSNP.WINDOW_SIZE, read_len)
     return seq_start, seq_end
 
+
+def print_two_digit_feature_matrix(feature_matrix):
+    """
+    Prints feature matrix containing two-digit feature values
+    where the first line printed is the tens column and the
+    second line is the ones column. This format is useful for
+    viewing pileup.
+
+    :param feature_matrix: numpy matrix
+    :return: None
+    """
+    tens = ""
+    ones = ""
+    for val in feature_matrix:
+        # get tens column
+        tens += str(int(val) / 10)
+        # get ones column
+        ones += str(int(val) % 10)
+    print tens
+    print ones
+
+
 def get_snps_in_window(snps, window_start, window_end):
     """
     Check to see which SNPs overlap with window

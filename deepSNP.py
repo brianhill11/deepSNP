@@ -14,14 +14,16 @@ from caffe2.proto import caffe2_pb2
 # local imports
 from utils import *
 from base_feature import *
-from map_qual_feature import *
 from snp_pos_feature import *
+from map_qual_feature import *
+from base_pos_feature import *
+
 
 
 #######################################
 # GLOBALS
 #######################################
-DEBUG = 0
+DEBUG = 1
 MIN_COUNT = 1
 MIN_FRACTION = 1. / 20
 WINDOW_SIZE = 80
@@ -41,17 +43,24 @@ def create_feat_mat_read(read, window_start, window_end):
     :param window_end: ending position of feature window
     :return: (WINDOW_SIZE x F) matrix
     """
-
+    # FEATURE 1: base character
+    bp_feat_mat = base_pair_feature_matrix(read, window_start)
+    # FEATURE 2: SNP position (marked by 1)
     snp_pos_feat_mat = snp_pos_feature_matrix(read, window_start)
     if DEBUG:
         print_snp_pos_feature_matrix(snp_pos_feat_mat)
     #
-    bp_feat_mat = base_pair_feature_matrix(read, window_start)
     feat_mat = concat_feature_matrices(bp_feat_mat, snp_pos_feat_mat)
+    # FEATURE 3: mapping quality
     map_qual_mat = map_qual_feature_matrix(read, window_start)
     if DEBUG:
         print_map_qual_feature_matrix(map_qual_mat)
     feat_mat = concat_feature_matrices(feat_mat, map_qual_mat)
+    # FEATURE 4: base position within read
+    base_pos_feat_matrix = base_pos_feature_matrix(read, window_start)
+    if DEBUG:
+        print_base_pos_feature_matrix(base_pos_feat_matrix)
+    feat_mat = concat_feature_matrices(feat_mat, base_pos_feat_matrix)
     return feat_mat
 
 

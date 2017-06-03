@@ -39,13 +39,5 @@ def print_map_qual_feature_matrix(map_qual_feat_matrix):
     :param map_qual_feat_matrix: matrix containing mapping quality
     :return: None
     """
-    map_qual_tens = ""
-    map_qual_ones = ""
-    for val in map_qual_feat_matrix:
-        # get tens column
-        map_qual_tens += str(int(val) / 10)
-        # get ones column
-        map_qual_ones += str(int(val) % 10)
-    print map_qual_tens
-    print map_qual_ones
+    utils.print_two_digit_feature_matrix(map_qual_feat_matrix)
     return
