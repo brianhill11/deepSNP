@@ -90,6 +90,7 @@ def concat_feature_matrices(feat_mat1, feat_mat2):
         print e
         print "matrix1 shape:", feat_mat1.shape
         print "matrix2 shape:", feat_mat2.shape
+        print "Did you forget to return mat[..., np.newaxis] ?"
         exit(-100)
 
 def create_feat_mat_read(read, window_start, window_end):
@@ -109,59 +110,29 @@ def create_feat_mat_read(read, window_start, window_end):
         print_snp_mask_feature_matrix(snp_mask_feat_mat)
     #
     bp_feat_mat = base_pair_feature_matrix(read, window_start)
-    return concat_feature_matrices(bp_feat_mat, snp_mask_feat_mat)
+    feat_mat = concat_feature_matrices(bp_feat_mat, snp_mask_feat_mat)
+    map_qual_mat = map_qual_feature_matrix(read, window_start)
+    if DEBUG:
+        print_map_qual_feature_matrix(map_qual_mat)
+    feat_mat = concat_feature_matrices(feat_mat, map_qual_mat)
+    return feat_mat
 
 
-def create_feature_matrix(snp_window_pileups):
+def get_padding(read, window_start):
     """
-    Create a (# reads) x (# bases in window) x (# features)
-    feature matrix by iterating through each read at each 
-    column (base) in the window around the potential SNP
-    and extracting features we want to use for deep learning 
-    
-    :param snp_window_pileups: pysam.PileupColumns object
-    :return: Numpy matrix containing features
+
+    :param read:
+    :param window_start:
+    :return:
     """
-    # matrix dims : coverage rows x window_size columns x num_features
-    matrix_shape = [NUM_ROWS, WINDOW_SIZE, NUM_FEATURES]
-    # initialize matrix to -1, which indicates absence of feature
-    # TODO: is this a good numeric value to use in model?
-    # NOTE: order='F' stores data in Fortran-contiguous order (column-wise)
-    # as we will be writing to matrix in column order
-    feature_matrix = np.full(matrix_shape, -1, order='F')
-
-    y = 0  # column number
-    # for each column (genomic position), iterate through reads
-    for pileup_col in snp_window_pileups:
-        x = 0  # row number
-        # for each read at this position, get metrics we want
-        if pileup_col.nsegments > 0:
-            for read in pileup_col.pileups:
-                # position of base in read
-                pos = read.query_position
-                # quality score of base call
-                qual = read.alignment.query_qualities[pos]
-                # mapping quality of read
-                mqual = read.alignment.mapping_quality
-                # is this read the first or second of the pair?
-                read_num = 0
-                if read.alignment.is_read2:
-                    read_num = 1
-
-                print "ref seq:", read.alignment.query_alignment_sequence
-                print vectorize_base_seq(read.alignment.query_alignment_sequence)
-                # write features to matrix
-                feature_matrix[x, y, feature_pos['qual']] = qual
-                feature_matrix[x, y, feature_pos['mqual']] = mqual
-                feature_matrix[x, y, feature_pos['pos']] = pos
-                feature_matrix[x, y, feature_pos['read_num']] = read_num
-
-                # increment row number
-                x += 1
-        # increment column number
-        y += 1
-
-    return feature_matrix
+    window_end = window_start + WINDOW_SIZE
+    # calculate dimensions to left and right of read for padding zeros
+    num_pad_left = np.maximum(0, read.reference_start - window_start)
+    # NOTE: pysam reference_length = reference_end - reference_start
+    # but this does not necessarily mean the query sequence is that length
+    ref_end = read.reference_start + len(read.query_sequence)
+    num_pad_right = np.maximum(0, window_end - ref_end)
+    return num_pad_left, num_pad_right
 
 
 def get_snps_in_window(snps, window_start, window_end):
@@ -208,18 +179,11 @@ def base_pair_feature_matrix(read, window_start):
     :param window_start: starting position of feature window
     :return: (WINDOW_SIZE x 4) matrix
     """
-    window_end = window_start + WINDOW_SIZE
-    # calculate dimensions to left and right of read for padding zeros
-    num_pad_left = np.maximum(0, read.reference_start - window_start)
-    # NOTE: pysam reference_length = reference_end - reference_start
-    # but this does not necessarily mean the query sequence is that length
-    ref_end = read.reference_start + len(read.query_sequence)
-    num_pad_right = np.maximum(0, window_end - ref_end)
     # check if we have only part of the read in the window
     normalized_offset = window_start - read.reference_start
     seq_start = np.maximum(normalized_offset, 0)
     seq_end = np.minimum(normalized_offset + WINDOW_SIZE, len(read.query_sequence))
-    #print "[", seq_start, seq_end, "]"
+
     base_pair_seq = read.query_sequence[seq_start:seq_end]
     # create the (READ_LENGTH x 4) matrix encoding base pairs
     one_hot_base_mat = vectorize_base_seq(base_pair_seq)
@@ -228,7 +192,7 @@ def base_pair_feature_matrix(read, window_start):
     # we are padding 1st dimension on left and right with zeros.
     # (0, 0) says don't pad on 2nd dimension before or after
     base_pair_feat_matrix = np.lib.pad(one_hot_base_mat,
-                      ((num_pad_left, num_pad_right), (0, 0)),
+                      ((get_padding(read, window_start)), (0, 0)),
                       'constant', constant_values=(0,))
     if base_pair_feat_matrix.shape[0] != WINDOW_SIZE:
         print "ERROR: base pair feat matrix not size of window"
@@ -344,6 +308,53 @@ def get_snp_pos_in_read(read):
                         return int(md_flag.split(b)[0])
     else:
         return -1
+
+
+def map_qual_feature_matrix(read, window_start):
+    """
+
+    :param read: pysam read
+    :param window_start: starting position of feature window
+    :return: (WINDOW_SIZE x 1) matrix containing MQAL at read positions
+    """
+    # check if we have only part of the read in the window
+    normalized_offset = window_start - read.reference_start
+    read_len = len(read.query_sequence)
+    seq_start = np.maximum(normalized_offset, 0)
+    seq_end = np.minimum(normalized_offset + WINDOW_SIZE, read_len)
+
+    # print "offset:", normalized_offset
+    # print "start: ", seq_start, " end: ", seq_end
+    # print "padding:", get_padding(read, window_start)
+    # create vector filled with mapping quality value
+    map_qual_feat_mat = np.full((seq_end - seq_start, 1), read.mapping_quality)
+
+    # we are padding 1st dimension on left and right with zeros.
+    # (0, 0) says don't pad on 2nd dimension before or after
+    map_qual_feat_mat = np.lib.pad(map_qual_feat_mat,
+                                       (get_padding(read, window_start), (0, 0)),
+                                       'constant', constant_values=(0,))
+    return map_qual_feat_mat
+
+
+def print_map_qual_feature_matrix(map_qual_feat_matrix):
+    """
+    Prints mapping quality feature matrix in a
+    command-line friendly way (I think)
+
+    :param map_qual_feat_matrix: matrix containing mapping quality
+    :return: None
+    """
+    map_qual_tens = ""
+    map_qual_ones = ""
+    for val in map_qual_feat_matrix:
+        # get tens column
+        map_qual_tens += str(int(val) / 10)
+        # get ones column
+        map_qual_ones += str(int(val) % 10)
+    print map_qual_tens
+    print map_qual_ones
+    return
 
 
 def decode_cigar(read, position):
