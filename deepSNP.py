@@ -6,6 +6,7 @@ import sys
 from sklearn.feature_extraction import DictVectorizer
 import cPickle as pickle
 import os
+import argparse
 
 sys.path.append("/usr/local")
 from caffe2.python import core, utils, workspace
@@ -480,10 +481,19 @@ def write_caffe2_db(db_type, db_name, features, labels):
 
 
 def main():
-    in_bam = sys.argv[1]
-    in_vcf = sys.argv[2]
-    in_ref = sys.argv[3]
-    in_truth = sys.argv[4]
+    parser = argparse.ArgumentParser(
+        description="Creates a training/testing feature/label mapping from an \
+         input BAM file using a VCF file containing potential SNP locations")
+    parser.add_argument('-b', '--bam-file', dest='bam', required=True, help='Input BAM file')
+    parser.add_argument('-r', '--reference-file', dest='ref', required=True, help='Reference fasta file for input BAM')
+    parser.add_argument('-v', '--vcf-file', dest='vcf', required=True, help='Input VCF file containing potential SNPs')
+    parser.add_argument('-t', '--truth-file', dest='truth', required=True, help='Output of wgsim containing ground truth SNPs')
+    args = parser.parse_args()
+
+    in_bam = args.bam
+    in_vcf = args.vcf
+    in_ref = args.ref
+    in_truth = args.truth
     bam_f = pysam.AlignmentFile(in_bam, "rb")
     ref_f = pysam.Fastafile(in_ref)
 
