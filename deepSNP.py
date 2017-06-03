@@ -3,7 +3,6 @@
 import pysam
 import numpy as np
 import sys
-from sklearn.feature_extraction import DictVectorizer
 import cPickle as pickle
 import os
 import argparse
@@ -11,6 +10,13 @@ import argparse
 sys.path.append("/usr/local")
 from caffe2.python import core, utils, workspace
 from caffe2.proto import caffe2_pb2
+
+# local imports
+from utils import *
+from base_feature import *
+from map_qual_feature import *
+from snp_pos_feature import *
+
 
 #######################################
 # GLOBALS
@@ -22,76 +28,7 @@ WINDOW_SIZE = 80
 NUM_ROWS = 30
 NUM_FEATURES = 4
 feature_pos = {'qual': 0, 'mqual': 1, 'pos': 2, 'read_num': 3}
-"""
-Create one-hot-vector encoding of bases
->>> base_dict = [{'base': 'A'}, {'base': 'C'}, {'base': 'G'}, {'base': 'T'}]
->>> dv = DictVectorizer(sparse=False)
->>> dv.fit_transform(base_dict)
-array([[ 1.,  0.,  0.,  0.],
-       [ 0.,  1.,  0.,  0.],
-       [ 0.,  0.,  1.,  0.],
-       [ 0.,  0.,  0.,  1.]])
->>> dv.transform({'base':'G'})
-array([[ 0.,  0.,  1.,  0.]])
-"""
-base_dict = [{'base': 'A'}, {'base': 'C'}, {'base': 'G'}, {'base': 'T'}]
-dv = DictVectorizer(sparse=False)
-dv.fit_transform(base_dict)
 
-
-def vert_stack_matrices(top_matrix, bottom_matrix):
-    """
-    Add (L x F) 2D matrix to R dimension of 
-    (R x L x F) 3D matrix
-    
-    We are trying to make a 3D feature matrix by 
-    stacking 2D matrices. In this case, we have 
-    (L x F) matrices, where L=window width and 
-    F=#features and we would like to stack R of 
-    these matrices where R=#reads, to make an 
-    (R x L x F) matrix
-       __________
-    F/          /|
-    /__________/ |
-    |          | |
-   R|          | |
-    |          | |
-    |__________|/
-          L
-    :param top_matrix: 
-    :param bottom_matrix: 
-    :return: stacked 3D feature matrix
-    """
-    # if we already have a 3D top matrix, turn bottom into 3D and merge
-    if top_matrix.ndim == 3:
-        new_mat = np.vstack([top_matrix, bottom_matrix[np.newaxis, ...]])
-        #print "new matrix shape:", new_mat.shape
-        return new_mat
-    # otherwise this is the initial stacking of 2 2D matrices
-    else:
-        new_mat = np.vstack([top_matrix[np.newaxis, ...], bottom_matrix[np.newaxis, ...]])
-        #print "new matrix shape:", new_mat.shape
-        return new_mat
-
-
-def concat_feature_matrices(feat_mat1, feat_mat2):
-    """
-    Join 2 feature matrices together column-wise
-    
-    :param feat_mat1: (WINDOW_SIZE x F1) matrix
-    :param feat_mat2: (WINDOW_SIZE x F2) matrix
-    :return: (WINDOW_SIZE x F1+F2) matrix
-    """
-    #print "mat1 shape:", feat_mat1.shape
-    #print "mat2 shape:", feat_mat2.shape
-    try:
-        return np.concatenate((feat_mat1, feat_mat2), axis=1)
-    except ValueError as e:
-        print e
-        print "matrix1 shape:", feat_mat1.shape
-        print "matrix2 shape:", feat_mat2.shape
-        print "Did you forget to return mat[..., np.newaxis] ?"
-        exit(-100)
 
 def create_feat_mat_read(read, window_start, window_end):
     """
@@ -105,12 +42,12 @@ def create_feat_mat_read(read, window_start, window_end):
     :return: (WINDOW_SIZE x F) matrix
     """
 
-    snp_mask_feat_mat = snp_mask_feature_matrix(read, window_start)
+    snp_pos_feat_mat = snp_pos_feature_matrix(read, window_start)
     if DEBUG:
-        print_snp_mask_feature_matrix(snp_mask_feat_mat)
+        print_snp_pos_feature_matrix(snp_pos_feat_mat)
     #
     bp_feat_mat = base_pair_feature_matrix(read, window_start)
-    feat_mat = concat_feature_matrices(bp_feat_mat, snp_mask_feat_mat)
+    feat_mat = concat_feature_matrices(bp_feat_mat, snp_pos_feat_mat)
     map_qual_mat = map_qual_feature_matrix(read, window_start)
     if DEBUG:
         print_map_qual_feature_matrix(map_qual_mat)
@@ -118,289 +55,11 @@ def create_feat_mat_read(read, window_start, window_end):
     return feat_mat
 
 
-def get_padding(read, window_start):
-    """
-
-    :param read:
-    :param window_start:
-    :return:
-    """
-    window_end = window_start + WINDOW_SIZE
-    # calculate dimensions to left and right of read for padding zeros
-    num_pad_left = np.maximum(0, read.reference_start - window_start)
-    # NOTE: pysam reference_length = reference_end - reference_start
-    # but this does not necessarily mean the query sequence is that length
-    ref_end = read.reference_start + len(read.query_sequence)
-    num_pad_right = np.maximum(0, window_end - ref_end)
-    return num_pad_left, num_pad_right
-
-
-def get_snps_in_window(snps, window_start, window_end):
-    """
-    Check to see which SNPs overlap with window
-    
-    :param snps: list of dicts, [{pos -> (alleles)}, ...]
-    :param window_start: starting position in contig
-    :param window_end: ending position in contig
-    :return: list of positions of overlapping SNPs
-    """
-    snps_in_window = []
-    for snp in snps:
-        for pos, alleles in snp.items():
-            if pos >= window_start and pos <= window_end:
-                snps_in_window.append(pos)
-    return snps_in_window
-
-
-def vectorize_base_seq(seq):
-    """
-    Encodes each base letter as one-hot-vector, creating 
-    a matrix of one-hot-vectors representing a base sequence
-    See global section for example
-    
-    :param seq: sequence string of base pairs
-    :return: matrix of bases encoded as one-hot-vectors
-    """
-    list_of_dicts = []
-    for base in seq:
-        list_of_dicts.append({'base': base.upper()})
-    return dv.transform(list_of_dicts)
-
-
-def base_pair_feature_matrix(read, window_start):
-    """
-    Creates (WINDOW_SIZE x 4) matrix, where the 4 dimensions
-    are for each possible base pair (A,C,G,T) and they are
-    one-hot encoded using the vectorize_base_seq function 
-    and then padded with zeros around the read so that the 
-    final matrix size is WINDOW_SIZE wide
-    
-    :param read: pysam read
-    :param window_start: starting position of feature window
-    :return: (WINDOW_SIZE x 4) matrix
-    """
-    # check if we have only part of the read in the window
-    normalized_offset = window_start - read.reference_start
-    seq_start = np.maximum(normalized_offset, 0)
-    seq_end = np.minimum(normalized_offset + WINDOW_SIZE, len(read.query_sequence))
-
-    base_pair_seq = read.query_sequence[seq_start:seq_end]
-    # create the (READ_LENGTH x 4) matrix encoding base pairs
-    one_hot_base_mat = vectorize_base_seq(base_pair_seq)
-    #print "1-hot shape:", one_hot_base_mat.shape
-
-    # we are padding 1st dimension on left and right with zeros.
-    # (0, 0) says don't pad on 2nd dimension before or after
-    base_pair_feat_matrix = np.lib.pad(one_hot_base_mat,
-                      ((get_padding(read, window_start)), (0, 0)),
-                      'constant', constant_values=(0,))
-    if base_pair_feat_matrix.shape[0] != WINDOW_SIZE:
-        print "ERROR: base pair feat matrix not size of window"
-        print "len(bps)", len(base_pair_seq)
-        print "window start:", window_start
-        print "window end:", window_end
-        print "read start:", read.reference_start
-        print "read end:", read.reference_end
-        print "read len:", read.reference_length
-        print "len(qs):", len(read.query_sequence)
-        print "shape:", base_pair_feat_matrix.shape
-        print "num_pad_left:", num_pad_left
-        print "num_pad_right:", num_pad_right
-        print "seq_start:", seq_start
-        print "seq_end:", seq_end
-        exit(-101)
-    #print "BP feat matrix shape: ", base_pair_feat_matrix.shape
-    if DEBUG:
-        print_base_pair_feature_matrix(base_pair_feat_matrix)
-    return base_pair_feat_matrix
-
-
-def print_base_pair_feature_matrix(base_pair_feat_matrix):
-    """
-    Uses inverse transform of one-hot encoded matrix to build 
-    a string representing the matrix data 
-    
-    :param base_pair_feat_matrix: one-hot encoded base pair matrix
-    :return: Printable string
-    """
-    bp_string = ""
-    # get inverse transform
-    bp_inv = dv.inverse_transform(base_pair_feat_matrix)
-    for bp in bp_inv:
-        try:
-            # each dict in list looks like {'base=G', 1.0}
-            bp_string += bp.items()[0][0].split('=')[1]
-        except IndexError:
-            bp_string += "-"
-    print bp_string
-    return bp_string
-
-
-def snp_mask_feature_matrix(read, window_start):
-    """
-    Creates vector of zeros, except 1 at SNP position
-    
-    :param read: pysam read
-    :param window_start: starting position of feature window
-    :return: (WINDOW_SIZE x 1) binary matrix marking SNP position
-    """
-    # if SNP exists in read, get position
-    snp_pos_in_read = get_snp_pos_in_read(read)
-    # create zero vector
-    snp_mask_matrix = np.zeros(WINDOW_SIZE)
-    # if we have a snp, mark 1 at SNP location in read
-    if snp_pos_in_read >= 0:
-        snp_pos_in_matrix = (read.reference_start + snp_pos_in_read) - window_start
-        #print "snp_pos_in_matrix:", snp_pos_in_matrix
-        # don't mark SNP if it occurs outside of our window
-        if snp_pos_in_matrix < WINDOW_SIZE and snp_pos_in_matrix >= 0:
-            snp_mask_matrix[snp_pos_in_matrix] = 1
-    return snp_mask_matrix[..., np.newaxis]
-
-
-def print_snp_mask_feature_matrix(snp_mask_feat_matrix):
-    """
-    Prints a string of zeros, except 1 at SNP location
-    
-    :param snp_mask_feat_matrix: binary mask matrix with SNP location
-    :return: printable string
-    """
-    mask_string = ""
-    for val in snp_mask_feat_matrix:
-        mask_string += str(int(val))
-    print mask_string
-    return mask_string
-
-
-def get_snp_pos_in_read(read):
-    """
-    Use NM and MD tag to extract SNP positions in read
-    
-    :param read: pysam read
-    :return: integer position of SNP in read
-    """
-    # get number of mismatches in read (edit distance)
-    num_mismatches = read.get_tag("NM")
-
-    # TODO: be able to handle reads w/ multiple SNPs? or toss those reads?
-    # TODO: if so, replace all ACGT with X, split, then add prev val to current to get pos
-    # if we have a positive number of mismatches, we have SNPs!
-    if num_mismatches == 1:
-        md_flag = read.get_tag("MD")
-        #print md_flag
-        # try to split using base character
-        for b in ['A', 'C', 'T', 'G']:
-            # if we can split the string, string form like [0-9]+[ACGT]
-            # where the leading number is #matches before SNP and since
-            # python is zero based this should give us the index of SNP
-
-            # NOTE: len(md_flag) < 6 prevents things like 11A2T1T19 from getting through
-            if len(md_flag) < 6:
-                if len(md_flag.split(b)) == 2:
-                    # TODO: handle deletions?
-                    # check for deletion character 
-                    if len(md_flag.split("^")) == 2:
-                        return -1
-                    # if read is reversed, need to flip
-                    if read.is_reverse:
-                        return int(md_flag.split(b)[1])
-                    else:
-                        return int(md_flag.split(b)[0])
-    else:
-        return -1
-
-
-def map_qual_feature_matrix(read, window_start):
-    """
-
-    :param read: pysam read
-    :param window_start: starting position of feature window
-    :return: (WINDOW_SIZE x 1) matrix containing MQAL at read positions
-    """
-    # check if we have only part of the read in the window
-    normalized_offset = window_start - read.reference_start
-    read_len = len(read.query_sequence)
-    seq_start = np.maximum(normalized_offset, 0)
-    seq_end = np.minimum(normalized_offset + WINDOW_SIZE, read_len)
-
-    # print "offset:", normalized_offset
-    # print "start: ", seq_start, " end: ", seq_end
-    # print "padding:", get_padding(read, window_start)
-    # create vector filled with mapping quality value
-    map_qual_feat_mat = np.full((seq_end - seq_start, 1), read.mapping_quality)
-
-    # we are padding 1st dimension on left and right with zeros.
-    # (0, 0) says don't pad on 2nd dimension before or after
-    map_qual_feat_mat = np.lib.pad(map_qual_feat_mat,
-                                       (get_padding(read, window_start), (0, 0)),
-                                       'constant', constant_values=(0,))
-    return map_qual_feat_mat
-
-
-def print_map_qual_feature_matrix(map_qual_feat_matrix):
-    """
-    Prints mapping quality feature matrix in a
-    command-line friendly way (I think)
-
-    :param map_qual_feat_matrix: matrix containing mapping quality
-    :return: None
-    """
-    map_qual_tens = ""
-    map_qual_ones = ""
-    for val in map_qual_feat_matrix:
-        # get tens column
-        map_qual_tens += str(int(val) / 10)
-        # get ones column
-        map_qual_ones += str(int(val) % 10)
-    print map_qual_tens
-    print map_qual_ones
-    return
-
-
-def decode_cigar(read, position):
-    """
-    Gets the cigar event for a position in a read
-    :param read: the pysam read 
-    :param position: the position in the read to decode
-    :return: the cigar event at that position
-    """
-    # cigar tuples have format [(operation, length)]
-    # check first tuple before iterating through all
-    # tuples, as most reads hopefully match fully
-    cigar_pos = read.cigartuples[0][1]
-    if position <= cigar_pos:
-        return read.cigartuples[0][0]
-
-    # else we have to weed through the messy by
-    # checking if our position falls within range of the operation
-    for op, length in read.cigartuples[1:]:
-        cigar_pos += length
-        if position <= cigar_pos:
-            return op
-
-
-def is_usable_read(read):
-    """
-    Checks read for several features to determine whether or not 
-    read is suitable for inclusion 
-
-    source: http://biorxiv.org/content/biorxiv/suppl/2016/12/21/092890.DC3/092890-1.pdf
-    slightly modified from version found in link above
-
-    :param read: pysam read
-    :return: true if read passes all quality tests, else false
-    """
-    return (len(read.get_tag("MD")) < 6 and
-            not (read.is_duplicate or read.is_qcfail or
-                 read.is_secondary or read.is_supplementary) and
-            read.is_paired and read.mapping_quality >= 10)
-
-
 def get_candidate_snps(vcf_file):
     """
     Create {(chromosome, position): (alleles)} mapping
     of SNPS from VCF file
-    
+
     :param vcf_file: path to VCF file
     :return: {(chromosome, position): (alleles)} SNP mapping
     """
