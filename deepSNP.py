@@ -6,6 +6,7 @@ import sys
 import cPickle as pickle
 import os
 import argparse
+import time
 
 sys.path.append("/usr/local")
 from caffe2.python import core, utils, workspace
@@ -25,10 +26,10 @@ from base_pos_feature import *
 #######################################
 DEBUG = 0
 # feature matrix dimensions
-WINDOW_SIZE = 80
+WINDOW_SIZE = 100
 NUM_ROWS = 30
 # number of training examples
-NUM_TRAINING_EXAMPLES = 1000000
+NUM_TRAINING_EXAMPLES = 500000
 NUM_TRAINING_EX_PER_CLASS = NUM_TRAINING_EXAMPLES / 2
 # number of testing examples
 NUM_TESTING_EXAMPLES = 100000
@@ -206,9 +207,12 @@ def main():
     total_num_reads = 0
     feature_matrices = []
     labels = []
+    start_time = time.time()
     for location, alleles in candidate_snps.items():
         if num_snps % 100000 == 0:
+            cur_time = time.time()
             print "Num SNPs processed:", num_snps
+            print "Elapsed time:", cur_time - start_time 
         if num_snps > NUM_TRAINING_EXAMPLES:
             print "Reached max number of training examples"
             break
@@ -261,13 +265,17 @@ def main():
             assert(snp_feat_matrix.shape[0] == NUM_ROWS)
             assert(snp_feat_matrix.shape[1] == WINDOW_SIZE)
 
+            # for GPU processing, we need to change matrix shape from HWC -> CHW, where 
+            # H: height (#rows), W: width (#cols), C: channels (#features)
+            snp_feat_matrix = snp_feat_matrix.swapaxes(1, 2).swapaxes(0, 1)
+            
             # case: True SNP
             if location in real_snps:
                 # make sure our class distributions are even
                 if num_positive_train_ex < NUM_TRAINING_EX_PER_CLASS:
                     #feature_matrices.append(snp_feat_matrix)
                     #labels.append(1)
-                    write_caffe2_db("minidb", "train.minidb", snp_feat_matrix, np.array([1]), num_snps)
+                    write_caffe2_db("minidb", "/mnt/app_hdd/scratch/blhill/train.minidb", snp_feat_matrix, np.array([1]), num_snps)
                     num_positive_train_ex += 1
                     num_snps += 1
                     total_num_reads += num_reads
@@ -276,7 +284,7 @@ def main():
                 if num_negative_train_ex < NUM_TRAINING_EX_PER_CLASS:
                     #feature_matrices.append(snp_feat_matrix)
                     #labels.append(0)
-                    write_caffe2_db("minidb", "train.minidb", snp_feat_matrix, np.array([0]), num_snps)
+                    write_caffe2_db("minidb", "/mnt/app_hdd/scratch/blhill/train.minidb", snp_feat_matrix, np.array([0]), num_snps)
                     num_negative_train_ex += 1
                     num_snps += 1
                     total_num_reads += num_reads
