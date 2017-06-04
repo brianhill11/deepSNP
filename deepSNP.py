@@ -132,7 +132,7 @@ def get_real_snps(truth_file):
         return real_snps
 
 
-def write_caffe2_db(db_type, db_name, features, labels):
+def write_caffe2_db(db_type, db_name, features, labels, snp_num):
     """
     
     
@@ -146,17 +146,18 @@ def write_caffe2_db(db_type, db_name, features, labels):
     :return: 
     """
     db = core.C.create_db(db_type, db_name, core.C.Mode.write)
-    transaction = db.new_transaction()
+
     # iterate through feature matrix
-    for i in range(0, len(features)):
-        feature_and_label = caffe2_pb2.TensorProtos()
-        feature_and_label.protos.extend([
-            utils.NumpyArrayToCaffe2Tensor(features[i]),
-            utils.NumpyArrayToCaffe2Tensor(labels[i])
-        ])
-        transaction.put('train_%03d'.format(i), feature_and_label.SerializeToString())
-    # close transaction and DB
+    #
+    transaction = db.new_transaction()
+    feature_and_label = caffe2_pb2.TensorProtos()
+    feature_and_label.protos.extend([
+        utils.NumpyArrayToCaffe2Tensor(features),
+        utils.NumpyArrayToCaffe2Tensor(labels)
+    ])
+    transaction.put('train_%03d'.format(snp_num), feature_and_label.SerializeToString())
     del transaction
+    # close transaction and DB
     del db
 
 
@@ -264,16 +265,18 @@ def main():
             if location in real_snps:
                 # make sure our class distributions are even
                 if num_positive_train_ex < NUM_TRAINING_EX_PER_CLASS:
-                    feature_matrices.append(snp_feat_matrix)
-                    labels.append(1)
+                    #feature_matrices.append(snp_feat_matrix)
+                    #labels.append(1)
+                    write_caffe2_db("minidb", "train.minidb", snp_feat_matrix, np.array([1]), num_snps)
                     num_positive_train_ex += 1
                     num_snps += 1
                     total_num_reads += num_reads
             # case: False SNP
             else:
                 if num_negative_train_ex < NUM_TRAINING_EX_PER_CLASS:
-                    feature_matrices.append(snp_feat_matrix)
-                    labels.append(0)
+                    #feature_matrices.append(snp_feat_matrix)
+                    #labels.append(0)
+                    write_caffe2_db("minidb", "train.minidb", snp_feat_matrix, np.array([0]), num_snps)
                     num_negative_train_ex += 1
                     num_snps += 1
                     total_num_reads += num_reads
@@ -286,7 +289,7 @@ def main():
     print "Num feature matrices: ", len(feature_matrices)
     print "Num labels: ", len(labels)
     labels = np.array(labels)
-    write_caffe2_db("minidb", "train.minidb", feature_matrices, labels)
+    #write_caffe2_db("minidb", "train.minidb", feature_matrices, labels)
     print "Sum of labels:", np.sum(labels)
     print "Avg #reads per SNP:", total_num_reads / len(feature_matrices)
     exit(0)
