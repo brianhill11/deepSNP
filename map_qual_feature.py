@@ -2,7 +2,7 @@
 
 import numpy as np
 import deepSNP
-import utils
+import deepSNP_utils
 
 
 def map_qual_feature_matrix(read, window_start):
@@ -15,7 +15,7 @@ def map_qual_feature_matrix(read, window_start):
     :return: (WINDOW_SIZE x 1) matrix containing MQAL at read positions
     """
     # check if we have only part of the read in the window
-    seq_start, seq_end = utils.seq_start_end(read, window_start)
+    seq_start, seq_end = deepSNP_utils.seq_start_end(read, window_start)
 
     # print "offset:", normalized_offset
     # print "start: ", seq_start, " end: ", seq_end
@@ -26,7 +26,7 @@ def map_qual_feature_matrix(read, window_start):
     # we are padding 1st dimension on left and right with zeros.
     # (0, 0) says don't pad on 2nd dimension before or after
     map_qual_feat_mat = np.lib.pad(map_qual_feat_mat,
-                                       (utils.get_padding(read, window_start), (0, 0)),
+                                       (deepSNP_utils.get_padding(read, window_start), (0, 0)),
                                        'constant', constant_values=(0,))
     return map_qual_feat_mat
 

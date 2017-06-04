@@ -3,7 +3,7 @@
 import numpy as np
 from sklearn.feature_extraction import DictVectorizer
 import deepSNP
-import utils
+import deepSNP_utils
 
 """
 Create one-hot-vector encoding of bases
@@ -35,7 +35,7 @@ def base_pair_feature_matrix(read, window_start):
     :return: (WINDOW_SIZE x 4) matrix
     """
     # check if we have only part of the read in the window
-    seq_start, seq_end = utils.seq_start_end(read, window_start)
+    seq_start, seq_end = deepSNP_utils.seq_start_end(read, window_start)
 
     base_pair_seq = read.query_sequence[seq_start:seq_end]
     # create the (READ_LENGTH x 4) matrix encoding base pairs
@@ -45,7 +45,7 @@ def base_pair_feature_matrix(read, window_start):
     # we are padding 1st dimension on left and right with zeros.
     # (0, 0) says don't pad on 2nd dimension before or after
     base_pair_feat_matrix = np.lib.pad(one_hot_base_mat,
-                                       ((utils.get_padding(read, window_start)), (0, 0)),
+                                       ((deepSNP_utils.get_padding(read, window_start)), (0, 0)),
                                        'constant', constant_values=(0,))
     if base_pair_feat_matrix.shape[0] != deepSNP.WINDOW_SIZE:
         print "ERROR: base pair feat matrix not size of window"

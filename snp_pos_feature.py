@@ -2,7 +2,7 @@
 
 import numpy as np
 import deepSNP
-import utils
+import deepSNP_utils
 
 
 def snp_pos_feature_matrix(read, window_start):
