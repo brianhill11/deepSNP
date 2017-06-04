@@ -12,7 +12,7 @@ from caffe2.python import core, utils, workspace
 from caffe2.proto import caffe2_pb2
 
 # local imports
-from utils import *
+from deepSNP_utils import *
 from base_feature import *
 from snp_pos_feature import *
 from map_qual_feature import *
@@ -254,7 +254,7 @@ def main():
                     snp_feat_matrix = snp_feat_matrix[np.newaxis, ...]
                 # empty_rows matrix should have dims: (#emptyrows x WINDOW_SIZE x #features)
                 empty_rows = np.zeros((num_empty_rows, WINDOW_SIZE, snp_feat_matrix.shape[2]))
-                
+
                 snp_feat_matrix = np.vstack([snp_feat_matrix, empty_rows])
 
             assert(snp_feat_matrix.shape[0] == NUM_ROWS)
