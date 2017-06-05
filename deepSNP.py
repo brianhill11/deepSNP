@@ -170,12 +170,14 @@ def main():
     parser.add_argument('-r', '--reference-file', dest='ref', required=True, help='Reference fasta file for input BAM')
     parser.add_argument('-v', '--vcf-file', dest='vcf', required=True, help='Input VCF file containing potential SNPs')
     parser.add_argument('-t', '--truth-file', dest='truth', required=True, help='Output of wgsim containing ground truth SNPs')
+    parser.add_argument('-d', '--db-file', dest='db_file', required=True, help='Output Caffe DB file name')
     args = parser.parse_args()
 
     in_bam = args.bam
     in_vcf = args.vcf
     in_ref = args.ref
     in_truth = args.truth
+    db_file = args.db_file
     bam_f = pysam.AlignmentFile(in_bam, "rb")
     ref_f = pysam.Fastafile(in_ref)
 
@@ -275,7 +277,7 @@ def main():
                 if num_positive_train_ex < NUM_TRAINING_EX_PER_CLASS:
                     #feature_matrices.append(snp_feat_matrix)
                     #labels.append(1)
-                    write_caffe2_db("minidb", "/mnt/app_hdd/scratch/blhill/train.minidb", snp_feat_matrix, np.array([1]), num_snps)
+                    write_caffe2_db("minidb", db_file, snp_feat_matrix, np.array([1]), num_snps)
                     num_positive_train_ex += 1
                     num_snps += 1
                     total_num_reads += num_reads
@@ -284,7 +286,7 @@ def main():
                 if num_negative_train_ex < NUM_TRAINING_EX_PER_CLASS:
                     #feature_matrices.append(snp_feat_matrix)
                     #labels.append(0)
-                    write_caffe2_db("minidb", "/mnt/app_hdd/scratch/blhill/train.minidb", snp_feat_matrix, np.array([0]), num_snps)
+                    write_caffe2_db("minidb", db_file, snp_feat_matrix, np.array([0]), num_snps)
                     num_negative_train_ex += 1
                     num_snps += 1
                     total_num_reads += num_reads
