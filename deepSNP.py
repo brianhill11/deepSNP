@@ -7,6 +7,7 @@ import cPickle as pickle
 import os
 import argparse
 import time
+import random
 
 sys.path.append("/usr/local")
 from caffe2.python import core, utils, workspace
@@ -29,8 +30,10 @@ DEBUG = 0
 WINDOW_SIZE = 100
 NUM_ROWS = 30
 # number of training examples
-NUM_TRAINING_EXAMPLES = 500000
-NUM_TRAINING_EX_PER_CLASS = NUM_TRAINING_EXAMPLES / 2
+NUM_CLASSES = 2
+NUM_TRAINING_EXAMPLES = 200000
+NUM_TRAINING_EXAMPLES_PER_BATCH = 1024
+NUM_TRAINING_EX_PER_CLASS = NUM_TRAINING_EXAMPLES_PER_BATCH / NUM_CLASSES
 # number of testing examples
 NUM_TESTING_EXAMPLES = 100000
 
@@ -148,16 +151,22 @@ def write_caffe2_db(db_type, db_name, features, labels, snp_num):
     """
     db = core.C.create_db(db_type, db_name, core.C.Mode.write)
 
+
+    assert(len(features) == len(labels))
+    # use random permutation to shuffle examples in batch 
+    random_indices = np.random.permutation(len(features))
     # iterate through feature matrix
-    #
-    transaction = db.new_transaction()
-    feature_and_label = caffe2_pb2.TensorProtos()
-    feature_and_label.protos.extend([
-        utils.NumpyArrayToCaffe2Tensor(features),
-        utils.NumpyArrayToCaffe2Tensor(labels)
-    ])
-    transaction.put('train_%03d'.format(snp_num), feature_and_label.SerializeToString())
-    del transaction
+    for i in random_indices:
+        transaction = db.new_transaction()
+        feature_and_label = caffe2_pb2.TensorProtos()
+        feature_and_label.protos.extend([
+            utils.NumpyArrayToCaffe2Tensor(features[i]),
+            utils.NumpyArrayToCaffe2Tensor(labels[i])
+        ])
+        #print("tensor proto:")
+        #print(str(feature_and_label))
+        transaction.put('train_%03d'.format(snp_num + i), feature_and_label.SerializeToString())
+        del transaction
     # close transaction and DB
     del db
 
@@ -207,20 +216,43 @@ def main():
     num_positive_train_ex = 0
     num_negative_train_ex = 0
     total_num_reads = 0
+    num_snps_in_batch = 0
     feature_matrices = []
     labels = []
+    print "Num candidate SNPs:", len(candidate_snps)
+    print "Num true SNPs:", len(real_snps)
     start_time = time.time()
-    for location, alleles in candidate_snps.items():
+    #for location, alleles in candidate_snps.items():
+    #for location, alleles in real_snps.items():
+    num_iters = np.minimum(NUM_TRAINING_EXAMPLES, len(real_snps))
+    for i in range(num_iters):
+        # switch class every other iteration
+        if i % 2 == 0:
+            location = random.choice(list(real_snps))
+            snp_label = 1
+            num_positive_train_ex += 1
+        else:
+            location = random.choice(list(candidate_snps))
+            if location not in real_snps:
+                snp_label = 0
+                num_negative_train_ex += 1
+            else:
+                print "WARNING: randomly chosen SNP is true SNP"
+                snp_label = 1
+                num_positive_train_ex += 1
+
         if num_snps % 100000 == 0:
             cur_time = time.time()
             print "Num SNPs processed:", num_snps
             print "Elapsed time:", cur_time - start_time 
+            print "Num positive training examples:", num_positive_train_ex
+            print "Num negative training examples:", num_negative_train_ex
         if num_snps > NUM_TRAINING_EXAMPLES:
             print "Reached max number of training examples"
             break
         # location is (chromosome, position) tuple
         chromosome = location[0]
-        pos = location[1]
+        pos = int(location[1])
         # our feature window is centered on SNP position
         # max() makes sure we don't have negative index near start of contig
         window_start = max(pos - (WINDOW_SIZE / 2), 0)
@@ -272,36 +304,52 @@ def main():
             snp_feat_matrix = snp_feat_matrix.swapaxes(1, 2).swapaxes(0, 1)
             
             # case: True SNP
-            if location in real_snps:
-                # make sure our class distributions are even
-                if num_positive_train_ex < NUM_TRAINING_EX_PER_CLASS:
-                    #feature_matrices.append(snp_feat_matrix)
-                    #labels.append(1)
-                    write_caffe2_db("minidb", db_file, snp_feat_matrix, np.array([1]), num_snps)
-                    num_positive_train_ex += 1
-                    num_snps += 1
-                    total_num_reads += num_reads
+            # make sure our class distributions are even
+            #if num_positive_train_ex < NUM_TRAINING_EX_PER_CLASS:
+            feature_matrices.append(snp_feat_matrix)
+            
+            labels.append(snp_label)
+            #write_caffe2_db("minidb", db_file, snp_feat_matrix, np.array([1]), num_snps)
+            #num_positive_train_ex += 1
+            num_snps_in_batch += 1
+            num_snps += 1
+            total_num_reads += num_reads
             # case: False SNP
-            else:
-                if num_negative_train_ex < NUM_TRAINING_EX_PER_CLASS:
-                    #feature_matrices.append(snp_feat_matrix)
-                    #labels.append(0)
-                    write_caffe2_db("minidb", db_file, snp_feat_matrix, np.array([0]), num_snps)
-                    num_negative_train_ex += 1
-                    num_snps += 1
-                    total_num_reads += num_reads
+            #if num_negative_train_ex < NUM_TRAINING_EX_PER_CLASS:
+            #feature_matrices.append(snp_feat_matrix)
+            #labels.append(0)
+            ##write_caffe2_db("minidb", db_file, snp_feat_matrix, np.array([0]), num_snps)
+            #num_negative_train_ex += 1
+            #num_snps_in_batch += 1
+            #num_snps += 1
+            #total_num_reads += num_reads
+            
+            #print "num pos:", num_positive_train_ex
+            #print "num neg:", num_negative_train_ex
+            # if we have a full batch of evenly distributed examples, write to file
+            if num_snps_in_batch == NUM_TRAINING_EXAMPLES_PER_BATCH:
+                print "writing batch to minidb"
+                write_caffe2_db("minidb", db_file, feature_matrices, np.array(labels), num_snps)
+                # reset 
+                num_snps_in_batch = 0
+                num_positive_train_ex = 0
+                num_negative_train_ex = 0
+                feature_matrices = []
+                labels = []
 
 
         #print ""
         #print snp_feat_matrix
         #print "feature matrix dims:", snp_feat_matrix.shape
         #if num_snps == 25:
-    print "Num feature matrices: ", len(feature_matrices)
-    print "Num labels: ", len(labels)
-    labels = np.array(labels)
+    #print "Num feature matrices: ", len(feature_matrices)
+    #print "Num labels: ", len(labels)
+    #labels = np.array(labels)
     #write_caffe2_db("minidb", "train.minidb", feature_matrices, labels)
-    print "Sum of labels:", np.sum(labels)
-    print "Avg #reads per SNP:", total_num_reads / len(feature_matrices)
+    #print "Sum of labels:", np.sum(labels)
+    #print "Avg #reads per SNP:", total_num_reads / len(feature_matrices)
+    print "Total number of SNPs:", num_snps
+    print "Avg #reads per SNP:", total_num_reads / num_snps
     exit(0)
 
 
