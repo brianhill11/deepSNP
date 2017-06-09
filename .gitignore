@@ -1,4 +1,8 @@
 
+*.pbtxt
+*.summary
+*.minidb
+
 *.pyc
 *.pickle
 
