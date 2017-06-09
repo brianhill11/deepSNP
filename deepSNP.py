@@ -29,9 +29,13 @@ DEBUG = 0
 # feature matrix dimensions
 WINDOW_SIZE = 100
 NUM_ROWS = 30
-# number of training examples
+# number of classes to predict (in this case, 2, SNP/not SNP)
 NUM_CLASSES = 2
+# number of training examples
 NUM_TRAINING_EXAMPLES = 200000
+# we gather batches of training examples, evenly distributed
+# between classes, and write batches to disk to prevent
+# generating gigantic lists containing all training examples
 NUM_TRAINING_EXAMPLES_PER_BATCH = 1024
 NUM_TRAINING_EX_PER_CLASS = NUM_TRAINING_EXAMPLES_PER_BATCH / NUM_CLASSES
 # number of testing examples
@@ -134,6 +138,37 @@ def get_real_snps(truth_file):
                 print "Found duplicate SNP at", location, " and we're overwriting..."
                 real_snps[location] = alleles
         return real_snps
+
+
+def ref_feature_matrix(ref_f, chromosome, window_start, window_end):
+    """
+    Create feature matrix representing reference sequence. We do this by
+    one-hot encoding reference sequence (as we do with alignment sequences)
+    and fill in quality scores as very high value since we're fairly confident
+    in the reference sequence. We will set the rest of the matrix to zeros,
+    since many of the other features are not useful for the reference sequence.
+
+    :param ref_f: reference Fasta file
+    :param chromosome: chromosome string
+    :param window_start: starting position of feature window
+    :param window_end: ending position of feature window
+    :return: (WINDOW_SIZE x F) matrix, (F is number of features)
+    """
+    # get reference sequence
+    ref_bases = ref_f.fetch(chromosome, window_start, window_end)
+    # create feature matrix by one-hot-encoding reference sequence, and use super-high Qual score
+    ref_vector = vectorize_base_seq(ref_bases)
+    # we will use 60 as a very high quality score
+    qual_vector = np.full([WINDOW_SIZE, 1], 60)
+    # stack feature vectors to make feature matrix
+    feat_mat = concat_feature_matrices(ref_vector, qual_vector)
+    # pad the rest of the matrix with zeros to make it the same size as a read feature matrix
+    # currently, this dimension is 7
+    zero_vector = np.zeros((WINDOW_SIZE, 7 - feat_mat.shape[1]))
+    feat_mat = concat_feature_matrices(feat_mat, zero_vector)
+    #if deepSNP.DEBUG:
+    #    print print_base_pair_feature_matrix(ref_vector)
+    return feat_mat
 
 
 def write_caffe2_db(db_type, db_name, features, labels, snp_num):
@@ -265,6 +300,9 @@ def main():
         #overlapping_snp_pos = get_snps_in_window(snp_list, window_start, window_end)
         #snp_pileup_cols = bam_f.pileup(chromosome, window_start, window_end, fastafile=ref_f)
         window_reads = bam_f.fetch(chromosome, window_start, window_end)
+        # get reference feature matrix using reference sequence
+        ref_feat_matrix = ref_feature_matrix(ref_f, chromosome, window_start, window_end)
+
         if DEBUG:
             ref_bases = ref_f.fetch(chromosome, window_start, window_end)
             print ref_bases.upper()
@@ -273,9 +311,9 @@ def main():
             # check to make sure read is useful and we haven't hit max num reads
             if read.has_tag("MD") and is_usable_read(read) and num_reads < NUM_ROWS:
                 read_feature_matrix = create_feat_mat_read(read, window_start, window_end)
-                # if this is our first read, overwrite snp_feat_matrix
+                # if this is our first read, stack read feature matrix under reference feature matrix
                 if first_read:
-                    snp_feat_matrix = read_feature_matrix
+                    snp_feat_matrix = vert_stack_matrices(ref_feat_matrix, read_feature_matrix)
                     first_read = False
                 # else, stack read's feature matrix with prev reads
                 else:
@@ -283,8 +321,8 @@ def main():
                 num_reads += 1
         #print "Num reads processed:", num_reads
         if num_reads > 0:
-            # calculate number of empty rows we need to add to matrix
-            num_empty_rows = NUM_ROWS - num_reads
+            # calculate number of empty rows we need to add to matrix (minus one for Ref seq)
+            num_empty_rows = NUM_ROWS - num_reads - 1
 
             if num_empty_rows > 0:
                 # if we only have one read, snp_feat_matrix is still 2D matrix
@@ -296,8 +334,8 @@ def main():
 
                 snp_feat_matrix = np.vstack([snp_feat_matrix, empty_rows])
 
-            assert(snp_feat_matrix.shape[0] == NUM_ROWS)
-            assert(snp_feat_matrix.shape[1] == WINDOW_SIZE)
+            assert snp_feat_matrix.shape[0] == NUM_ROWS, "SNP feature matrix shape[0]: %r" % snp_feat_matrix.shape[0]
+            assert snp_feat_matrix.shape[1] == WINDOW_SIZE, "SNP feature matrix shape[1]: %r" % snp_feat_matrix.shape[1]
 
             # for GPU processing, we need to change matrix shape from HWC -> CHW, where 
             # H: height (#rows), W: width (#cols), C: channels (#features)
