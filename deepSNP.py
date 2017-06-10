@@ -54,17 +54,16 @@ def create_feat_mat_read(read, window_start, window_end):
     """
     # FEATURE 1: base character
     bp_feat_mat = base_pair_feature_matrix(read, window_start)
-    # FEATURE 2: SNP position (marked by 1)
-    snp_pos_feat_mat = snp_pos_feature_matrix(read, window_start)
-    if DEBUG:
-        print_snp_pos_feature_matrix(snp_pos_feat_mat)
-    #
-    feat_mat = concat_feature_matrices(bp_feat_mat, snp_pos_feat_mat)
-    # FEATURE 3: mapping quality
+    # FEATURE 2: mapping quality
     map_qual_mat = map_qual_feature_matrix(read, window_start)
     if DEBUG:
         print_map_qual_feature_matrix(map_qual_mat)
-    feat_mat = concat_feature_matrices(feat_mat, map_qual_mat)
+    feat_mat = concat_feature_matrices(bp_feat_mat, map_qual_mat)
+    # FEATURE 3: SNP position (marked by 1)
+    snp_pos_feat_mat = snp_pos_feature_matrix(read, window_start)
+    if DEBUG:
+        print_snp_pos_feature_matrix(snp_pos_feat_mat)
+    feat_mat = concat_feature_matrices(feat_mat, snp_pos_feat_mat)
     # FEATURE 4: base position within read
     base_pos_feat_matrix = base_pos_feature_matrix(read, window_start)
     if DEBUG:
