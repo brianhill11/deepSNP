@@ -309,7 +309,7 @@ def main():
         num_reads = 0
         for read in window_reads:
             # check to make sure read is useful and we haven't hit max num reads
-            if read.has_tag("MD") and is_usable_read(read) and num_reads < NUM_ROWS:
+            if read.has_tag("MD") and is_usable_read(read) and num_reads < (NUM_ROWS - 1):
                 read_feature_matrix = create_feat_mat_read(read, window_start, window_end)
                 # if this is our first read, stack read feature matrix under reference feature matrix
                 if first_read:
