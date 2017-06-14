@@ -174,19 +174,20 @@ def ref_feature_matrix(ref_f, chromosome, window_start, window_end):
 
 def write_caffe2_db(db_type, db_name, features, labels, snp_num):
     """
-    
-    
+    Writes pairs of feature matrices and labels as protobuf objects
+    to a minidb file to be used as input to Caffe2
+
+    The order of the feature matrices/labels are shuffled randomly
+
     Based on tutorial from https://github.com/caffe2/caffe2/blob/master/caffe2/python/tutorials/create_your_own_dataset.ipynb
-    
-    
-    :param db_type: 
-    :param db_name: 
-    :param features: 
-    :param labels: 
-    :return: 
+
+    :param db_type: type of database file to write (ex. minidb, leveldb, lmdb)
+    :param db_name: name of the database file
+    :param features: list of Numpy feature matrices
+    :param labels: list of Numpy labels
+    :return: None
     """
     db = core.C.create_db(db_type, db_name, core.C.Mode.write)
-
 
     assert(len(features) == len(labels))
     # use random permutation to shuffle examples in batch 
@@ -252,6 +253,8 @@ def main():
     num_positive_train_ex = 0
     num_negative_train_ex = 0
     total_num_reads = 0
+    num_reads_positive_train_ex = 0
+    num_reads_negative_train_ex = 0
     num_snps_in_batch = 0
     feature_matrices = []
     labels = []
@@ -266,23 +269,22 @@ def main():
         if i % 2 == 0:
             location = random.choice(list(real_snps))
             snp_label = 1
-            num_positive_train_ex += 1
         else:
             location = random.choice(list(candidate_snps))
             if location not in real_snps:
                 snp_label = 0
-                num_negative_train_ex += 1
             else:
                 print "WARNING: randomly chosen SNP is true SNP"
                 snp_label = 1
-                num_positive_train_ex += 1
 
-        if num_snps % 100000 == 0:
+        if num_snps % 100000 == 0 and num_snps > 0:
             cur_time = time.time()
             print "Num SNPs processed:", num_snps
             print "Elapsed time:", cur_time - start_time 
             print "Num positive training examples:", num_positive_train_ex
+            print "Num reads per positive training example:", num_reads_positive_train_ex / num_reads_positive_train_ex
             print "Num negative training examples:", num_negative_train_ex
+            print "Num reads per negative training example:", num_reads_negative_train_ex / num_reads_negative_train_ex
         if num_snps > NUM_TRAINING_EXAMPLES:
             print "Reached max number of training examples"
             break
@@ -350,6 +352,12 @@ def main():
             labels.append(snp_label)
             #write_caffe2_db("minidb", db_file, snp_feat_matrix, np.array([1]), num_snps)
             #num_positive_train_ex += 1
+            if snp_label == 1:
+                num_positive_train_ex += 1
+                num_reads_positive_train_ex += num_reads
+            else:
+                num_negative_train_ex += 1
+                num_reads_negative_train_ex += num_reads
             num_snps_in_batch += 1
             num_snps += 1
             total_num_reads += num_reads
@@ -371,7 +379,7 @@ def main():
                 cur_time = time.time()
                 print "Num SNPs processed:", num_snps
                 print "Elapsed time:", cur_time - start_time
-            write_caffe2_db("minidb", db_file, feature_matrices, np.array(labels), num_snps)
+                write_caffe2_db("minidb", db_file, feature_matrices, np.array(labels), num_snps)
                 # reset 
                 num_snps_in_batch = 0
                 num_positive_train_ex = 0
@@ -390,8 +398,21 @@ def main():
     #write_caffe2_db("minidb", "train.minidb", feature_matrices, labels)
     #print "Sum of labels:", np.sum(labels)
     #print "Avg #reads per SNP:", total_num_reads / len(feature_matrices)
+
+
+    print "##########################################################"
+    print "## FINAL SUMMARY STATISTICS"
+    print "##########################################################"
+    cur_time = time.time()
+    print "Elapsed time:", cur_time - start_time
     print "Total number of SNPs:", num_snps
     print "Avg #reads per SNP:", total_num_reads / num_snps
+    print "Num positive training examples:", num_positive_train_ex
+    print "Num reads per positive training example:", num_reads_positive_train_ex / num_reads_positive_train_ex
+    print "Num negative training examples:", num_negative_train_ex
+    print "Num reads per negative training example:", num_reads_negative_train_ex / num_reads_negative_train_ex
+    print "##########################################################"
+    print "Done!"
     exit(0)
 
 
