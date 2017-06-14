@@ -38,5 +38,5 @@ def print_base_pos_feature_matrix(base_pos_feat_matrix):
     :param base_pos_feat_matrix: numpy matrix
     :return: None
     """
-    utils.print_two_digit_feature_matrix(base_pos_feat_matrix)
+    deepSNP_utils.print_two_digit_feature_matrix(base_pos_feat_matrix)
     return

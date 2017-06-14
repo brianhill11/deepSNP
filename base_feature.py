@@ -36,8 +36,8 @@ def base_pair_feature_matrix(read, window_start):
     """
     # check if we have only part of the read in the window
     seq_start, seq_end = deepSNP_utils.seq_start_end(read, window_start)
-
-    base_pair_seq = read.query_sequence[seq_start:seq_end]
+    # use query_alignment_sequence since we do not want soft-clipped bases
+    base_pair_seq = read.query_alignment_sequence[seq_start:seq_end]
     # create the (READ_LENGTH x 4) matrix encoding base pairs
     one_hot_base_mat = vectorize_base_seq(base_pair_seq)
     # print "1-hot shape:", one_hot_base_mat.shape
@@ -51,14 +51,11 @@ def base_pair_feature_matrix(read, window_start):
         print "ERROR: base pair feat matrix not size of window"
         print "len(bps)", len(base_pair_seq)
         print "window start:", window_start
-        print "window end:", window_end
         print "read start:", read.reference_start
         print "read end:", read.reference_end
         print "read len:", read.reference_length
         print "len(qs):", len(read.query_sequence)
         print "shape:", base_pair_feat_matrix.shape
-        print "num_pad_left:", num_pad_left
-        print "num_pad_right:", num_pad_right
         print "seq_start:", seq_start
         print "seq_end:", seq_end
         exit(-101)
