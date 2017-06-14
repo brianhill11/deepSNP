@@ -84,7 +84,7 @@ def get_padding(read, window_start):
     num_pad_left = np.maximum(0, read.reference_start - window_start)
     # NOTE: pysam reference_length = reference_end - reference_start
     # but this does not necessarily mean the query sequence is that length
-    ref_end = read.reference_start + len(read.query_sequence)
+    ref_end = read.reference_start + len(read.query_alignment_sequence)
     num_pad_right = np.maximum(0, window_end - ref_end)
     return num_pad_left, num_pad_right
 
@@ -99,7 +99,8 @@ def seq_start_end(read, window_start):
     :return: (seq_start, seq_end) tuple
     """
     normalized_offset = window_start - read.reference_start
-    read_len = len(read.query_sequence)
+    # note: query_alignment_sequence excludes all Soft-clipped bases
+    read_len = len(read.query_alignment_sequence)
     seq_start = np.maximum(normalized_offset, 0)
     seq_end = np.minimum(normalized_offset + deepSNP.WINDOW_SIZE, read_len)
     return seq_start, seq_end

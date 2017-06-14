@@ -29,6 +29,8 @@ DEBUG = 0
 # feature matrix dimensions
 WINDOW_SIZE = 100
 NUM_ROWS = 30
+# required minimum number of reads in a feature window
+MIN_NUM_READS = 4
 # number of classes to predict (in this case, 2, SNP/not SNP)
 NUM_CLASSES = 2
 # number of training examples
@@ -56,17 +58,17 @@ def create_feat_mat_read(read, window_start, window_end):
     bp_feat_mat = base_pair_feature_matrix(read, window_start)
     # FEATURE 2: mapping quality
     map_qual_mat = map_qual_feature_matrix(read, window_start)
-    if DEBUG:
+    if DEBUG > 1:
         print_map_qual_feature_matrix(map_qual_mat)
     feat_mat = concat_feature_matrices(bp_feat_mat, map_qual_mat)
     # FEATURE 3: SNP position (marked by 1)
     snp_pos_feat_mat = snp_pos_feature_matrix(read, window_start)
-    if DEBUG:
+    if DEBUG > 0:
         print_snp_pos_feature_matrix(snp_pos_feat_mat)
     feat_mat = concat_feature_matrices(feat_mat, snp_pos_feat_mat)
     # FEATURE 4: base position within read
     base_pos_feat_matrix = base_pos_feature_matrix(read, window_start)
-    if DEBUG:
+    if DEBUG > 1:
         print_base_pos_feature_matrix(base_pos_feat_matrix)
     feat_mat = concat_feature_matrices(feat_mat, base_pos_feat_matrix)
     return feat_mat
@@ -319,7 +321,7 @@ def main():
                     snp_feat_matrix = vert_stack_matrices(snp_feat_matrix, read_feature_matrix)
                 num_reads += 1
         #print "Num reads processed:", num_reads
-        if num_reads > 0:
+        if num_reads > MIN_NUM_READS:
             # calculate number of empty rows we need to add to matrix (minus one for Ref seq)
             num_empty_rows = NUM_ROWS - num_reads - 1
 
@@ -366,7 +368,10 @@ def main():
             # if we have a full batch of evenly distributed examples, write to file
             if num_snps_in_batch == NUM_TRAINING_EXAMPLES_PER_BATCH:
                 print "writing batch to minidb"
-                write_caffe2_db("minidb", db_file, feature_matrices, np.array(labels), num_snps)
+                cur_time = time.time()
+                print "Num SNPs processed:", num_snps
+                print "Elapsed time:", cur_time - start_time
+            write_caffe2_db("minidb", db_file, feature_matrices, np.array(labels), num_snps)
                 # reset 
                 num_snps_in_batch = 0
                 num_positive_train_ex = 0
