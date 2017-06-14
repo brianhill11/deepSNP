@@ -19,7 +19,12 @@ def snp_pos_feature_matrix(read, window_start):
     snp_mask_matrix = np.zeros((deepSNP.WINDOW_SIZE, 1))
     # if we have a snp, mark 1 at SNP location in read
     if snp_pos_in_read >= 0:
-        snp_pos_in_matrix = (read.reference_start + snp_pos_in_read) - window_start
+        # if read is forward strand, add position from start of read
+        if not read.is_reverse:
+            snp_pos_in_matrix = (read.reference_start + snp_pos_in_read) - window_start
+        # if read is reverse strand, subtract position from end of read
+        else:
+            snp_pos_in_matrix = (read.reference_end - 1 - snp_pos_in_read) - window_start
         # print "snp_pos_in_matrix:", snp_pos_in_matrix
         # don't mark SNP if it occurs outside of our window
         if snp_pos_in_matrix < deepSNP.WINDOW_SIZE and snp_pos_in_matrix >= 0:
