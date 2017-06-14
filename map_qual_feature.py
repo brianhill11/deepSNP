@@ -39,5 +39,5 @@ def print_map_qual_feature_matrix(map_qual_feat_matrix):
     :param map_qual_feat_matrix: matrix containing mapping quality
     :return: None
     """
-    utils.print_two_digit_feature_matrix(map_qual_feat_matrix)
+    deepSNP_utils.print_two_digit_feature_matrix(map_qual_feat_matrix)
     return
