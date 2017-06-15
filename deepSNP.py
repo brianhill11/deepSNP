@@ -19,16 +19,18 @@ from base_feature import *
 from snp_pos_feature import *
 from map_qual_feature import *
 from base_pos_feature import *
-
+from base_qual_feature import *
 
 
 #######################################
 # GLOBALS
 #######################################
-DEBUG = 0
+DEBUG = 1
 # feature matrix dimensions
 WINDOW_SIZE = 100
 NUM_ROWS = 30
+# depth of feature matrix
+FEATURE_DEPTH = 8
 # required minimum number of reads in a feature window
 MIN_NUM_READS = 4
 # number of classes to predict (in this case, 2, SNP/not SNP)
@@ -65,12 +67,18 @@ def create_feat_mat_read(read, window_start, window_end):
     snp_pos_feat_mat = snp_pos_feature_matrix(read, window_start)
     if DEBUG > 0:
         print_snp_pos_feature_matrix(snp_pos_feat_mat)
+        print read.query_alignment_qualities
     feat_mat = concat_feature_matrices(feat_mat, snp_pos_feat_mat)
     # FEATURE 4: base position within read
     base_pos_feat_matrix = base_pos_feature_matrix(read, window_start)
     if DEBUG > 1:
         print_base_pos_feature_matrix(base_pos_feat_matrix)
     feat_mat = concat_feature_matrices(feat_mat, base_pos_feat_matrix)
+    # FEATURE 5: base quality score for each base
+    base_qual_feat_matrix = base_qual_feature_matrix(read, window_start)
+    if DEBUG > 1:
+        print_base_qual_feature_matrix(base_qual_feat_matrix)
+    feat_mat = concat_feature_matrices(feat_mat, base_qual_feat_matrix)
     return feat_mat
 
 
@@ -164,8 +172,7 @@ def ref_feature_matrix(ref_f, chromosome, window_start, window_end):
     # stack feature vectors to make feature matrix
     feat_mat = concat_feature_matrices(ref_vector, qual_vector)
     # pad the rest of the matrix with zeros to make it the same size as a read feature matrix
-    # currently, this dimension is 7
-    zero_vector = np.zeros((WINDOW_SIZE, 7 - feat_mat.shape[1]))
+    zero_vector = np.zeros((WINDOW_SIZE, FEATURE_DEPTH - feat_mat.shape[1]))
     feat_mat = concat_feature_matrices(feat_mat, zero_vector)
     #if deepSNP.DEBUG:
     #    print print_base_pair_feature_matrix(ref_vector)
