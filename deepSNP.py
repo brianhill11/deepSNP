@@ -8,6 +8,7 @@ import os
 import argparse
 import time
 import random
+import logging
 
 sys.path.append("/usr/local")
 from caffe2.python import core, utils, workspace
@@ -25,7 +26,7 @@ from base_qual_feature import *
 #######################################
 # GLOBALS
 #######################################
-DEBUG = 1
+DEBUG = 0
 # feature matrix dimensions
 WINDOW_SIZE = 100
 NUM_ROWS = 30
@@ -224,7 +225,15 @@ def main():
     parser.add_argument('-v', '--vcf-file', dest='vcf', required=True, help='Input VCF file containing potential SNPs')
     parser.add_argument('-t', '--truth-file', dest='truth', required=True, help='Output of wgsim containing ground truth SNPs')
     parser.add_argument('-d', '--db-file', dest='db_file', required=True, help='Output Caffe DB file name')
+    parser.add_argument('-l', '--log', dest='log_level', required=False, default="INFO", help='Set log level (ex:, DEBUG, INFO, WARNING, etc.)')
     args = parser.parse_args()
+
+    # set logging config
+    log_level_num = getattr(logging, args.log_level.upper(), None)
+    if not isinstance(log_level_num, int):
+        raise ValueError('Invalid log level: %s' % args.log_level)
+    log = logging.getLogger('deepSNP')
+    log.setLevel(log_level_num)
 
     in_bam = args.bam
     in_vcf = args.vcf
@@ -237,30 +246,29 @@ def main():
     real_snps = {}
     real_snps_pickle = os.path.splitext(in_truth)[0] + ".pickle"
     if os.path.isfile(real_snps_pickle):
-        print "Loading", real_snps_pickle
+        log.info("Loading %s",real_snps_pickle)
         real_snps = pickle.load(open(real_snps_pickle, "rb"))
     else:
         # TODO: change get_candidate_snps to name not tied to candidate SNPs, instead VCF
         # if we have VCF file, parse VCF
-        if (os.path.splitext(in_truth)[1] == '.vcf'):
+        if os.path.splitext(in_truth)[1] == '.vcf':
             # get_candidate_snps parses VCF
             real_snps = get_candidate_snps(in_truth)
         # else assume BED-like file
         else:
             real_snps = get_real_snps(in_truth)
-        print "Creating", real_snps_pickle, " file"
+        log.info("Creating file: %s", real_snps_pickle)
         pickle.dump(real_snps, open(real_snps_pickle, "wb"))
-    #print real_snps
 
     candidate_snps = {}
     candidate_snps_pickle = os.path.splitext(in_vcf)[0] + ".pickle"
     # get {(chr, pos): (ref, alt)} mapping
     if os.path.isfile(candidate_snps_pickle):
-        print "Loading", candidate_snps_pickle
+        log.info("Loading %s", candidate_snps_pickle)
         candidate_snps = pickle.load(open(candidate_snps_pickle, "rb"))
     else:
         candidate_snps = get_candidate_snps(in_vcf)
-        print "Creating", candidate_snps_pickle, " file"
+        log.info("Creating file: %s", candidate_snps_pickle)
         pickle.dump(candidate_snps, open(candidate_snps_pickle, "wb"))
 
     num_snps = 0
@@ -272,11 +280,10 @@ def main():
     num_snps_in_batch = 0
     feature_matrices = []
     labels = []
-    print "Num candidate SNPs:", len(candidate_snps)
-    print "Num true SNPs:", len(real_snps)
+    log.info("Num candidate SNPs: %s" % len(candidate_snps))
+    log.info("Num true SNPs: %s", len(real_snps))
     start_time = time.time()
-    #for location, alleles in candidate_snps.items():
-    #for location, alleles in real_snps.items():
+
     num_iters = np.minimum(NUM_TRAINING_EXAMPLES, len(real_snps))
     for i in range(num_iters):
         # switch class every other iteration
@@ -288,19 +295,19 @@ def main():
             if location not in real_snps:
                 snp_label = 0
             else:
-                print "WARNING: randomly chosen SNP is true SNP"
+                log.warning("randomly chosen potential SNP is true SNP! Location: (%s, %s)", location[0], location[1])
                 snp_label = 1
 
         if num_snps % 100000 == 0 and num_snps > 0:
             cur_time = time.time()
-            print "Num SNPs processed:", num_snps
-            print "Elapsed time:", cur_time - start_time 
-            print "Num positive training examples:", num_positive_train_ex
-            print "Num reads per positive training example:", num_reads_positive_train_ex / num_reads_positive_train_ex
-            print "Num negative training examples:", num_negative_train_ex
-            print "Num reads per negative training example:", num_reads_negative_train_ex / num_reads_negative_train_ex
+            log.info("Num SNPs processed: %s", num_snps)
+            log.info("Elapsed time: %s", cur_time - start_time)
+            log.info("Num positive training examples: %s", num_positive_train_ex)
+            log.info("Num reads per positive training example: %s", num_reads_positive_train_ex / num_reads_positive_train_ex)
+            log.info("Num negative training examples: %s", num_negative_train_ex)
+            log.info("Num reads per negative training example: %s", num_reads_negative_train_ex / num_reads_negative_train_ex)
         if num_snps > NUM_TRAINING_EXAMPLES:
-            print "Reached max number of training examples"
+            log.info("Reached max number of training examples")
             break
         # location is (chromosome, position) tuple
         chromosome = location[0]
@@ -312,10 +319,8 @@ def main():
 
         snp_feat_matrix = np.empty([WINDOW_SIZE, 1])
         first_read = True
-        if DEBUG:
-            print "location:", location
-        #overlapping_snp_pos = get_snps_in_window(snp_list, window_start, window_end)
-        #snp_pileup_cols = bam_f.pileup(chromosome, window_start, window_end, fastafile=ref_f)
+        log.debug("location: %s", location)
+
         window_reads = bam_f.fetch(chromosome, window_start, window_end)
         # get reference feature matrix using reference sequence
         ref_feat_matrix = ref_feature_matrix(ref_f, chromosome, window_start, window_end)
@@ -336,7 +341,7 @@ def main():
                 else:
                     snp_feat_matrix = vert_stack_matrices(snp_feat_matrix, read_feature_matrix)
                 num_reads += 1
-        #print "Num reads processed:", num_reads
+
         if num_reads > MIN_NUM_READS:
             # calculate number of empty rows we need to add to matrix (minus one for Ref seq)
             num_empty_rows = NUM_ROWS - num_reads - 1
@@ -357,15 +362,11 @@ def main():
             # for GPU processing, we need to change matrix shape from HWC -> CHW, where 
             # H: height (#rows), W: width (#cols), C: channels (#features)
             snp_feat_matrix = snp_feat_matrix.swapaxes(1, 2).swapaxes(0, 1)
-            
-            # case: True SNP
-            # make sure our class distributions are even
-            #if num_positive_train_ex < NUM_TRAINING_EX_PER_CLASS:
+
             feature_matrices.append(snp_feat_matrix)
             
             labels.append(snp_label)
-            #write_caffe2_db("minidb", db_file, snp_feat_matrix, np.array([1]), num_snps)
-            #num_positive_train_ex += 1
+
             if snp_label == 1:
                 num_positive_train_ex += 1
                 num_reads_positive_train_ex += num_reads
@@ -375,24 +376,13 @@ def main():
             num_snps_in_batch += 1
             num_snps += 1
             total_num_reads += num_reads
-            # case: False SNP
-            #if num_negative_train_ex < NUM_TRAINING_EX_PER_CLASS:
-            #feature_matrices.append(snp_feat_matrix)
-            #labels.append(0)
-            ##write_caffe2_db("minidb", db_file, snp_feat_matrix, np.array([0]), num_snps)
-            #num_negative_train_ex += 1
-            #num_snps_in_batch += 1
-            #num_snps += 1
-            #total_num_reads += num_reads
-            
-            #print "num pos:", num_positive_train_ex
-            #print "num neg:", num_negative_train_ex
+
             # if we have a full batch of evenly distributed examples, write to file
             if num_snps_in_batch == NUM_TRAINING_EXAMPLES_PER_BATCH:
-                print "writing batch to minidb"
+                log.info("writing batch to minidb")
                 cur_time = time.time()
-                print "Num SNPs processed:", num_snps
-                print "Elapsed time:", cur_time - start_time
+                log.info("Num SNPs processed: %s", num_snps)
+                log.info("Elapsed time: %s", cur_time - start_time)
                 write_caffe2_db("minidb", db_file, feature_matrices, np.array(labels), num_snps)
                 # reset 
                 num_snps_in_batch = 0
@@ -401,11 +391,6 @@ def main():
                 feature_matrices = []
                 labels = []
 
-
-        #print ""
-        #print snp_feat_matrix
-        #print "feature matrix dims:", snp_feat_matrix.shape
-        #if num_snps == 25:
     #print "Num feature matrices: ", len(feature_matrices)
     #print "Num labels: ", len(labels)
     #labels = np.array(labels)
