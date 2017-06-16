@@ -85,7 +85,7 @@ def create_feat_mat_read(read, window_start, window_end):
 def get_candidate_snps(vcf_file):
     """
     Create {(chromosome, position): (alleles)} mapping
-    of SNPS from VCF file
+    of SNPs from VCF file
 
     :param vcf_file: path to VCF file
     :return: {(chromosome, position): (alleles)} SNP mapping
@@ -240,7 +240,14 @@ def main():
         print "Loading", real_snps_pickle
         real_snps = pickle.load(open(real_snps_pickle, "rb"))
     else:
-        real_snps = get_real_snps(in_truth)
+        # TODO: change get_candidate_snps to name not tied to candidate SNPs, instead VCF
+        # if we have VCF file, parse VCF
+        if (os.path.splitext(in_truth)[1] == '.vcf'):
+            # get_candidate_snps parses VCF
+            real_snps = get_candidate_snps(in_truth)
+        # else assume BED-like file
+        else:
+            real_snps = get_real_snps(in_truth)
         print "Creating", real_snps_pickle, " file"
         pickle.dump(real_snps, open(real_snps_pickle, "wb"))
     #print real_snps
