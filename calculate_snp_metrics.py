@@ -82,8 +82,12 @@ def main():
         num_snps += 1
         if num_snps % 100000 == 0 and num_snps > 0:
             cur_time = time.time()
-            log.info("Num real SNPs processed: %s", num_snps)
+            log.info("Num real SNPs processed: %s (%s %)", num_snps, float(num_snps)/len(real_snps))
             log.info("Elapsed time: %s", cur_time - start_time)
+            log.info("Avg num reads per window:", float(total_num_reads)/float(num_snps))
+            log.info("Avg num usable reads per window:", float(total_num_usable_reads)/float(num_snps))
+            log.info("Avg num overlapping reads:", float(total_num_overlapping_reads)/float(num_snps))
+            log.info("Avg num usable overlapping reads:", float(total_num_usable_overlapping_reads)/float(num_snps))
         # location is (chromosome, position) tuple
         chromosome = location[0]
         pos = int(location[1])
@@ -150,8 +154,12 @@ def main():
         num_snps += 1
         if num_snps % 100000 == 0 and num_snps > 0:
             cur_time = time.time()
-            log.info("Num candidate SNPs processed: %s", num_snps)
+            log.info("Num candidate SNPs processed: %s (%s %)", num_snps, float(num_snps)/len(candidate_snps))
             log.info("Elapsed time: %s", cur_time - start_time)
+            log.info("Avg num reads per window:", float(total_num_reads)/float(num_snps))
+            log.info("Avg num usable reads per window:", float(total_num_usable_reads)/float(num_snps))
+            log.info("Avg num overlapping reads:", float(total_num_overlapping_reads)/float(num_snps))
+            log.info("Avg num usable overlapping reads:", float(total_num_usable_overlapping_reads)/float(num_snps))
         # location is (chromosome, position) tuple
         chromosome = location[0]
         pos = int(location[1])
