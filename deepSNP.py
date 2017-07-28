@@ -9,6 +9,7 @@ import argparse
 import time
 import random
 import logging
+from collections import OrderedDict
 
 sys.path.append("/usr/local")
 from caffe2.python import core, utils, workspace
@@ -91,7 +92,7 @@ def get_candidate_snps(vcf_file):
     :param vcf_file: path to VCF file
     :return: {(chromosome, position): (alleles)} SNP mapping
     """
-    candidate_snps = {}
+    candidate_snps = OrderedDict()
 
     # open VCF file
     vcf = pysam.VariantFile(vcf_file, 'r')
@@ -127,7 +128,7 @@ def get_real_snps(truth_file):
     :param truth_file: output file from wgsim
     :return: {chrom1 -> [{pos -> allele}], ...}
     """
-    real_snps = {}
+    real_snps = OrderedDict()
 
     # open ground truth file
     with open(truth_file, 'r') as truth_f:
@@ -243,13 +244,13 @@ def main():
     bam_f = pysam.AlignmentFile(in_bam, "rb")
     ref_f = pysam.Fastafile(in_ref)
 
-    real_snps = {}
+    real_snps = OrderedDict()
     real_snps_pickle = os.path.splitext(in_truth)[0] + ".pickle"
     if os.path.isfile(real_snps_pickle):
         log.info("Loading %s",real_snps_pickle)
         real_snps = pickle.load(open(real_snps_pickle, "rb"))
     else:
-        # TODO: change get_candidate_snps to name not tied to candidate SNPs, instead VCF
+        #TODO: change get_candidate_snps to name not tied to candidate SNPs, instead VCF
         # if we have VCF file, parse VCF
         if os.path.splitext(in_truth)[1] == '.vcf':
             # get_candidate_snps parses VCF
@@ -260,7 +261,7 @@ def main():
         log.info("Creating file: %s", real_snps_pickle)
         pickle.dump(real_snps, open(real_snps_pickle, "wb"))
 
-    candidate_snps = {}
+    candidate_snps = OrderedDict()
     candidate_snps_pickle = os.path.splitext(in_vcf)[0] + ".pickle"
     # get {(chr, pos): (ref, alt)} mapping
     if os.path.isfile(candidate_snps_pickle):

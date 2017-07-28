@@ -3,6 +3,7 @@
 import os
 import pysam
 from deepSNP import *
+from collections import OrderedDict
 
 WINDOW_SIZE = 100
 
@@ -38,7 +39,7 @@ def main():
     bam_f = pysam.AlignmentFile(in_bam, "rb")
     ref_f = pysam.Fastafile(in_ref)
 
-    real_snps = {}
+    real_snps = OrderedDict()
     real_snps_pickle = os.path.splitext(in_truth)[0] + ".pickle"
     if os.path.isfile(real_snps_pickle):
         log.info("Loading %s",real_snps_pickle)
@@ -55,7 +56,7 @@ def main():
         log.info("Creating file: %s", real_snps_pickle)
         pickle.dump(real_snps, open(real_snps_pickle, "wb"))
 
-    candidate_snps = {}
+    candidate_snps = OrderedDict()
     candidate_snps_pickle = os.path.splitext(in_vcf)[0] + ".pickle"
     # get {(chr, pos): (ref, alt)} mapping
     if os.path.isfile(candidate_snps_pickle):
