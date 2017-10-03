@@ -17,3 +17,6 @@
 
 *.vcf
 *.vcf.idx
+
+*.swp
+*.log
