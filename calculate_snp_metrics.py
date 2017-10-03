@@ -116,7 +116,8 @@ def main():
             if overlaps(read, pos):
                 num_overlapping_reads += 1
             # check to make sure read is useful and we haven't hit max num reads
-            if read.has_tag("MD") and is_usable_read(read):
+            if is_usable_read(read):
+            #if read.has_tag("MD") and is_usable_read(read):
                 num_usable_reads += 1
                 if overlaps(read, pos):
                     num_usable_overlapping_reads += 1
@@ -188,7 +189,8 @@ def main():
             if overlaps(read, pos):
                 num_overlapping_reads += 1
             # check to make sure read is useful and we haven't hit max num reads
-            if read.has_tag("MD") and is_usable_read(read):
+            if is_usable_read(read):
+            #if read.has_tag("MD") and is_usable_read(read):
                 num_usable_reads += 1
                 if overlaps(read, pos):
                     num_usable_overlapping_reads += 1

@@ -29,20 +29,20 @@ from base_qual_feature import *
 #######################################
 DEBUG = 0
 # feature matrix dimensions
-WINDOW_SIZE = 100
+WINDOW_SIZE = 200
 NUM_ROWS = 30
 # depth of feature matrix
-FEATURE_DEPTH = 8
+FEATURE_DEPTH = 7
 # required minimum number of reads in a feature window
 MIN_NUM_READS = 4
 # number of classes to predict (in this case, 2, SNP/not SNP)
 NUM_CLASSES = 2
 # number of training examples
-NUM_TRAINING_EXAMPLES = 200000
+NUM_TRAINING_EXAMPLES = 1000000
 # we gather batches of training examples, evenly distributed
 # between classes, and write batches to disk to prevent
 # generating gigantic lists containing all training examples
-NUM_TRAINING_EXAMPLES_PER_BATCH = 1024
+NUM_TRAINING_EXAMPLES_PER_BATCH = 1024*8
 NUM_TRAINING_EX_PER_CLASS = NUM_TRAINING_EXAMPLES_PER_BATCH / NUM_CLASSES
 # number of testing examples
 NUM_TESTING_EXAMPLES = 100000
@@ -66,11 +66,11 @@ def create_feat_mat_read(read, window_start, window_end):
         print_map_qual_feature_matrix(map_qual_mat)
     feat_mat = concat_feature_matrices(bp_feat_mat, map_qual_mat)
     # FEATURE 3: SNP position (marked by 1)
-    snp_pos_feat_mat = snp_pos_feature_matrix(read, window_start)
-    if DEBUG > 0:
-        print_snp_pos_feature_matrix(snp_pos_feat_mat)
-        print read.query_alignment_qualities
-    feat_mat = concat_feature_matrices(feat_mat, snp_pos_feat_mat)
+    #snp_pos_feat_mat = snp_pos_feature_matrix(read, window_start)
+    #if DEBUG > 0:
+    #    print_snp_pos_feature_matrix(snp_pos_feat_mat)
+    #    print read.query_alignment_qualities
+    #feat_mat = concat_feature_matrices(feat_mat, snp_pos_feat_mat)
     # FEATURE 4: base position within read
     base_pos_feat_matrix = base_pos_feature_matrix(read, window_start)
     if DEBUG > 1:
@@ -264,18 +264,20 @@ def main():
     candidate_snps = OrderedDict()
     candidate_snps_pickle = os.path.splitext(in_vcf)[0] + ".pickle"
     # get {(chr, pos): (ref, alt)} mapping
-    if os.path.isfile(candidate_snps_pickle):
-        log.info("Loading %s", candidate_snps_pickle)
-        candidate_snps = pickle.load(open(candidate_snps_pickle, "rb"))
-    else:
-        candidate_snps = get_candidate_snps(in_vcf)
-        log.info("Creating file: %s", candidate_snps_pickle)
-        pickle.dump(candidate_snps, open(candidate_snps_pickle, "wb"))
+    #if os.path.isfile(candidate_snps_pickle):
+    #    log.info("Loading %s", candidate_snps_pickle)
+    #    candidate_snps = pickle.load(open(candidate_snps_pickle, "rb"))
+    #else:
+    #    candidate_snps = get_candidate_snps(in_vcf)
+    #    log.info("Creating file: %s", candidate_snps_pickle)
+    #    pickle.dump(candidate_snps, open(candidate_snps_pickle, "wb"))
 
     num_snps = 0
     num_positive_train_ex = 0
     num_negative_train_ex = 0
     total_num_reads = 0
+    total_num_positive_train_ex = 0
+    total_num_negative_train_ex = 0
     num_reads_positive_train_ex = 0
     num_reads_negative_train_ex = 0
     num_snps_in_batch = 0
@@ -286,27 +288,44 @@ def main():
     start_time = time.time()
 
     num_iters = np.minimum(NUM_TRAINING_EXAMPLES, len(real_snps))
-    for i in range(num_iters):
-        # switch class every other iteration
-        if i % 2 == 0:
-            location = random.choice(list(real_snps))
+    #for i in range(num_iters):
+    vcf_iter = pysam.VariantFile(in_vcf, 'r')
+    # fetch all variants
+    for record in vcf_iter.fetch():
+        # tuple (chromosome, position) is primary key
+        location = (record.chrom, record.pos)
+        if location in real_snps:
             snp_label = 1
-        else:
-            location = random.choice(list(candidate_snps))
-            if location not in real_snps:
-                snp_label = 0
-            else:
-                log.warning("randomly chosen potential SNP is true SNP! Location: (%s, %s)", location[0], location[1])
-                snp_label = 1
+        else: 
+            snp_label = 0
+        # if we already have too many negative training examples for this batch, continue loop
+        if snp_label == 0 and num_negative_train_ex == NUM_TRAINING_EXAMPLES_PER_BATCH / 2: 
+            continue
+    # switch class every other iteration
+    #    if i % 2 == 0:
+    #        location = random.choice(list(real_snps))
+    #        snp_label = 1
+    #    else:
+    #        location = random.choice(list(candidate_snps))
+    #        if location not in real_snps:
+    #            snp_label = 0
+    #        else:
+    #            log.warning("randomly chosen potential SNP is true SNP! Location: (%s, %s)", location[0], location[1])
+    #            snp_label = 1
 
-        if num_snps % 100000 == 0 and num_snps > 0:
+        if num_snps % 5000 == 0 and num_snps > 0:
             cur_time = time.time()
-            log.info("Num SNPs processed: %s", num_snps)
-            log.info("Elapsed time: %s", cur_time - start_time)
-            log.info("Num positive training examples: %s", num_positive_train_ex)
-            log.info("Num reads per positive training example: %s", num_reads_positive_train_ex / num_reads_positive_train_ex)
-            log.info("Num negative training examples: %s", num_negative_train_ex)
-            log.info("Num reads per negative training example: %s", num_reads_negative_train_ex / num_reads_negative_train_ex)
+            avg_time_per_snp = (cur_time - start_time) / float(num_snps)
+            log.info("============ Num SNPs processed: %s ============", num_snps)
+            log.info("Elapsed time: %.2f mins", (cur_time - start_time) / 60.0)
+            log.info("Estimated time remaining: %.2f mins", ((len(real_snps) - num_snps) * avg_time_per_snp) / 60.0)
+            log.info("Avg time per SNP: %.2f sec", avg_time_per_snp)
+            log.info("Avg num reads per SNP: %s", total_num_reads / float(num_snps))
+            log.info("Num positive training examples: %s", total_num_positive_train_ex)
+            log.info("Num reads per positive training example: %s", float(num_reads_positive_train_ex) / total_num_positive_train_ex)
+            log.info("Num negative training examples: %s", total_num_negative_train_ex)
+            log.info("Num reads per negative training example: %s", float(num_reads_negative_train_ex) / total_num_negative_train_ex)
+            log.info("============ %.2f percent complete ============", (float(num_snps) / NUM_TRAINING_EXAMPLES) * 100.0)
         if num_snps > NUM_TRAINING_EXAMPLES:
             log.info("Reached max number of training examples")
             break
@@ -332,7 +351,8 @@ def main():
         num_reads = 0
         for read in window_reads:
             # check to make sure read is useful and we haven't hit max num reads
-            if read.has_tag("MD") and is_usable_read(read) and num_reads < (NUM_ROWS - 1):
+            if is_usable_read(read) and num_reads < (NUM_ROWS - 1):
+            #if read.has_tag("MD") and is_usable_read(read) and num_reads < (NUM_ROWS - 1):
                 read_feature_matrix = create_feat_mat_read(read, window_start, window_end)
                 # if this is our first read, stack read feature matrix under reference feature matrix
                 if first_read:
@@ -370,9 +390,11 @@ def main():
 
             if snp_label == 1:
                 num_positive_train_ex += 1
+                total_num_positive_train_ex += 1
                 num_reads_positive_train_ex += num_reads
             else:
                 num_negative_train_ex += 1
+                total_num_negative_train_ex += 1
                 num_reads_negative_train_ex += num_reads
             num_snps_in_batch += 1
             num_snps += 1
@@ -406,11 +428,11 @@ def main():
     cur_time = time.time()
     print "Elapsed time:", cur_time - start_time
     print "Total number of SNPs:", num_snps
-    print "Avg #reads per SNP:", total_num_reads / num_snps
-    print "Num positive training examples:", num_positive_train_ex
-    print "Num reads per positive training example:", num_reads_positive_train_ex / num_reads_positive_train_ex
-    print "Num negative training examples:", num_negative_train_ex
-    print "Num reads per negative training example:", num_reads_negative_train_ex / num_reads_negative_train_ex
+    print "Avg #reads per SNP:", total_num_reads / float(num_snps)
+    print "Num positive training examples:", total_num_positive_train_ex
+    print "Num reads per positive training example:", float(num_reads_positive_train_ex) / total_num_positive_train_ex
+    print "Num negative training examples:", total_num_negative_train_ex
+    print "Num reads per negative training example:", float(num_reads_negative_train_ex) / total_num_negative_train_ex
     print "##########################################################"
     print "Done!"
     exit(0)

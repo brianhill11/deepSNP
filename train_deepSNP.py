@@ -49,25 +49,25 @@ def AddNetModel(model, data):
     each side in half.
     '''
     # Layer 1: 100 x 30 x 30
-    conv1 = brew.conv(model, data, 'conv1', dim_in=7, dim_out=30, kernel=1, use_cudnn=True)
+    conv1 = brew.conv(model, data, 'conv1', dim_in=7, dim_out=100, kernel=1, use_cudnn=True)
     conv1 = brew.relu(model, conv1, conv1, use_cudnn=True)
     # Layer 2: 98 x 28 x 20
-    conv2 = brew.conv(model, conv1, 'conv2', dim_in=30, dim_out=30, kernel=3, use_cudnn=True)
+    conv2 = brew.conv(model, conv1, 'conv2', dim_in=100, dim_out=80, kernel=3, use_cudnn=True)
     conv2 = brew.relu(model, conv2, conv2, use_cudnn=True)
     #  Layer 3: 96 x 26 x 20 
-    conv3 = brew.conv(model, conv2, 'conv3', dim_in=30, dim_out=20, kernel=5, use_cudnn=True)
+    conv3 = brew.conv(model, conv2, 'conv3', dim_in=80, dim_out=60, kernel=5, use_cudnn=True)
     conv3 = brew.relu(model, conv3, conv3, use_cudnn=True)
     #  Layer 4: 94 x 24 x 20 
-    conv4 = brew.conv(model, conv3, 'conv4', dim_in=20, dim_out=30, kernel=3, use_cudnn=True)
+    conv4 = brew.conv(model, conv3, 'conv4', dim_in=60, dim_out=40, kernel=3, use_cudnn=True)
     conv4 = brew.relu(model, conv4, conv4, use_cudnn=True)
-    #  Layer 4: 92 x 22 x 20 
-    conv5 = brew.conv(model, conv4, 'conv5', dim_in=30, dim_out=30, kernel=3, use_cudnn=True)
+    #  Layer 5: 92 x 22 x 20 
+    conv5 = brew.conv(model, conv4, 'conv5', dim_in=40, dim_out=30, kernel=3, use_cudnn=True)
     conv5 = brew.relu(model, conv5, conv5, use_cudnn=True)
 
-    fc3 = brew.fc(model, conv5, 'fc3', dim_in=30 * 90 * 20, dim_out=500, use_cudnn=True)
+    fc3 = brew.fc(model, conv5, 'fc3', dim_in=30 * 90 * 20, dim_out=1000, use_cudnn=True)
     fc3 = brew.relu(model, fc3, fc3, use_cudnn=True)
 
-    pred = brew.fc(model, fc3, 'pred', 500, 2, use_cudnn=True)
+    pred = brew.fc(model, fc3, 'pred', 1000, 2, use_cudnn=True)
     softmax = brew.softmax(model, pred, 'softmax', use_cudnn=True)
     return softmax
 
@@ -126,13 +126,13 @@ def AddBookkeepingOperators(model):
         # demo, we will only show how to summarize the parameters and their
         # gradients.
 
-
+print "Starting..."
 with core.DeviceScope(device_opt):
     arg_scope = {"order": "NCHW", "use_cudnn": True, "cudnn_exhaustice_search": True}
     train_model = model_helper.ModelHelper(name="deepSNP_train", arg_scope=arg_scope)
     data, label = AddInput(
         train_model, batch_size=256,
-        db=os.path.join(data_folder, 'chr20.minidb'),
+        db=os.path.join(data_folder, 'NA12878.train_400k_100W.minidb'),
         db_type='minidb')
     softmax = AddNetModel(train_model, data)
     AddTrainingOperators(train_model, softmax, label)
@@ -147,7 +147,7 @@ with core.DeviceScope(device_opt):
         name="deepSNP_test", arg_scope=arg_scope, init_params=False)
     test_data, test_label = AddInput(
         test_model, batch_size=100,
-        db=os.path.join(data_folder, 'chr17.minidb'),
+        db=os.path.join(data_folder, 'NA12878.train_400k_100W.minidb'),
         db_type='minidb')
     test_softmax = AddNetModel(test_model, test_data)
     AddAccuracy(test_model, test_softmax, test_label)
@@ -180,7 +180,7 @@ workspace.RunNetOnce(train_model.param_init_net)
 # creating the network
 workspace.CreateNet(train_model.net, overwrite=True)
 # set the number of iterations and track the accuracy & loss
-total_iters = 200000
+total_iters = 2000000
 accuracy = np.zeros(total_iters)
 loss = np.zeros(total_iters)
 total_num_ones = 0
