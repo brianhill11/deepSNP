@@ -84,8 +84,12 @@ def get_padding(read, window_start):
     num_pad_left = np.maximum(0, read.reference_start - window_start)
     # NOTE: pysam reference_length = reference_end - reference_start
     # but this does not necessarily mean the query sequence is that length
-    ref_end = read.reference_start + len(read.query_alignment_sequence)
+    #ref_end = read.reference_start + len(read.query_alignment_sequence)
+    ref_end = read.reference_end 
+    #num_pad_right = np.maximum(0, window_end - (ref_end - (read.query_alignment_length - read.query_alignment_end)))
     num_pad_right = np.maximum(0, window_end - ref_end)
+    #print "Num pad left: ", num_pad_left
+    #print "Num pad right:", num_pad_right
     return num_pad_left, num_pad_right
 
 
@@ -99,10 +103,23 @@ def seq_start_end(read, window_start):
     :return: (seq_start, seq_end) tuple
     """
     normalized_offset = window_start - read.reference_start
+    #normalized_offset = window_start - (read.reference_start + read.query_alignment_start)
+    #print "window_start:", window_start
+    #print "read.query_alignment_start:", read.query_alignment_start
+    #print "read.query_alignment_end:", read.query_alignment_end
+    #normalized_offset = window_start - read.query_alignment_start
+    window_end = window_start + deepSNP.WINDOW_SIZE
     # note: query_alignment_sequence excludes all Soft-clipped bases
-    read_len = len(read.query_alignment_sequence)
-    seq_start = np.maximum(normalized_offset, 0)
-    seq_end = np.minimum(normalized_offset + deepSNP.WINDOW_SIZE, read_len)
+    #read_len = len(read.query_alignment_sequence)
+    normalized_end = window_end - read.reference_end 
+    normalized_end = read.reference_end - window_end
+    seq_start = np.maximum(normalized_offset, 0) 
+    #seq_end = np.minimum(normalized_end, 0) + read.query_alignment_end
+    seq_end = read.reference_length - np.maximum(normalized_end, 0)
+    #seq_end = np.minimum(normalized_offset + deepSNP.WINDOW_SIZE, read_len)
+    #seq_end = read_len + indel_adjustment + np.minimum(window_end - (read.reference_start + read_len), 
+    #        0)
+    #print "seq_end - seq_start:", seq_end - seq_start
     return seq_start, seq_end
 
 
@@ -155,7 +172,10 @@ def is_usable_read(read):
     :param read: pysam read
     :return: true if read passes all quality tests, else false
     """
-    return (len(read.get_tag("MD")) < 6 and
+    #return True
+    return not (read.is_duplicate or read.is_qcfail or
+                 read.is_secondary or read.is_supplementary) and read.is_paired and read.has_tag("NM") and read.get_tag("NM") < 2 and read.has_tag("MD") and "^" not in read.get_tag("MD")
+    return (len(read.get_tag("MD")) < 8 and
             not (read.is_duplicate or read.is_qcfail or
                  read.is_secondary or read.is_supplementary) and
             read.is_paired and read.mapping_quality >= 10)

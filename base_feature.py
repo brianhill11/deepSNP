@@ -54,10 +54,14 @@ def base_pair_feature_matrix(read, window_start):
         print "read start:", read.reference_start
         print "read end:", read.reference_end
         print "read len:", read.reference_length
-        print "len(qs):", len(read.query_sequence)
+        print "len(read.query_seq):", len(read.query_sequence)
+        print "query start:", read.query_alignment_start
+        print "query end:", read.query_alignment_end
+        print "len(qs):", len(read.query_alignment_sequence)
         print "shape:", base_pair_feat_matrix.shape
         print "seq_start:", seq_start
         print "seq_end:", seq_end
+        print "read:", read
         exit(-101)
     # print "BP feat matrix shape: ", base_pair_feat_matrix.shape
     if deepSNP.DEBUG:

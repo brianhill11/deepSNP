@@ -54,8 +54,10 @@ def get_snp_pos_in_read(read):
     :return: integer position of SNP in read
     """
     # get number of mismatches in read (edit distance)
-    num_mismatches = read.get_tag("NM")
-
+    if read.has_tag("NM"):
+        num_mismatches = read.get_tag("NM")
+    else:
+        return -1
     # TODO: be able to handle reads w/ multiple SNPs? or toss those reads?
     # TODO: if so, replace all ACGT with X, split, then add prev val to current to get pos
     # if we have a positive number of mismatches, we have SNPs!
